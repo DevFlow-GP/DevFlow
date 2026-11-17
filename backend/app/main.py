@@ -32,6 +32,8 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Browsers hide non-standard response headers from cross-origin JS unless listed.
+        expose_headers=["Retry-After"],
     )
     application.include_router(health_router)
     application.include_router(auth_router)

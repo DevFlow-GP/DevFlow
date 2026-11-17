@@ -171,6 +171,21 @@ async def test_callback_when_user_cancels_on_github(
 
 
 @pytest.mark.asyncio
+async def test_callback_with_other_github_error_is_not_a_cancel(
+    client: AsyncClient,
+    fake_github: FakeGitHubClient,
+) -> None:
+    token = await register_user(client)
+    me = await client.get("/auth/me", headers=auth_header(token))
+    state = create_oauth_state(me.json()["id"], "public")
+
+    callback = await client.get(
+        "/github/callback", params={"error": "redirect_uri_mismatch", "state": state}
+    )
+    assert redirect_params(callback) == {"status": "error", "reason": "github_error"}
+
+
+@pytest.mark.asyncio
 async def test_callback_with_rejected_code_redirects_with_error(
     client: AsyncClient,
     fake_github: FakeGitHubClient,

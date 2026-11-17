@@ -18,9 +18,10 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(min_length=32)
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
-    cors_allowed_origins: list[str] = ["http://localhost:3000"]
-    # Where the browser is sent back to after GitHub OAuth.
-    frontend_url: str = "http://localhost:3000"
+    # The Vite dev server's default address.
+    cors_allowed_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # Where emailed links and the GitHub OAuth redirect send the browser.
+    frontend_url: str = "http://localhost:5173"
 
     # GitHub OAuth App. Optional: without them the /github endpoints return 503.
     github_client_id: str | None = None

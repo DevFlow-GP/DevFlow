@@ -86,15 +86,28 @@ class GitHubService:
             payload = decode_oauth_state(state or "")
             user_id = uuid.UUID(payload["sub"])
             requested = GitHubAccess(payload["access"])
-        except (InvalidTokenError, KeyError, ValueError):
+        except (InvalidTokenError, KeyError, ValueError) as exc:
+            # The cause (expired, bad signature, missing) is on the chained PyJWT error.
+            cause = exc.__cause__ or exc
+            logger.warning(
+                "GitHub callback rejected: state %s (%s: %s); GitHub error param: %s",
+                "missing" if not state else "invalid",
+                type(cause).__name__,
+                cause,
+                error,
+            )
             return self._frontend_url(status="error", reason="invalid_state")
 
-        if error is not None:
-            # Typically "access_denied": the user clicked Cancel on GitHub.
+        if error == "access_denied":  # the user clicked Cancel on GitHub
             return self._frontend_url(status="cancelled")
+        if error is not None:
+            # e.g. redirect_uri_mismatch: the OAuth App's callback URL is wrong.
+            logger.warning("GitHub callback for user %s: GitHub returned error=%s", user_id, error)
+            return self._frontend_url(status="error", reason="github_error")
 
         user = await self._users.get_by_id(user_id)
         if user is None or not user.is_active:
+            logger.warning("GitHub callback rejected: user %s missing or inactive", user_id)
             return self._frontend_url(status="error", reason="invalid_state")
         if not code:
             return self._frontend_url(status="error", reason="missing_code")
