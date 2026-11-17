@@ -7,6 +7,8 @@ export const STATUS_CONFIG = {
   deploying: { label: 'Deploying', tone: 'info', iconTone: 'secondary', pulse: true },
   failed: { label: 'Failed', tone: 'danger', iconTone: 'error' },
   stopped: { label: 'Stopped', tone: 'neutral', iconTone: 'outline' },
+  // Real projects before pipelines and deployments exist.
+  not_deployed: { label: 'Not deployed', tone: 'neutral', iconTone: 'outline' },
   success: { label: 'Success', tone: 'success' },
   passing: { label: 'Passing', tone: 'success' },
 };

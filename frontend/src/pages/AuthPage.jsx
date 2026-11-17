@@ -1,6 +1,7 @@
-import { useId, useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Page from '../components/layout/Page';
+import Alert from '../components/ui/Alert';
 import AsyncContent from '../components/ui/AsyncContent';
 import Button from '../components/ui/Button';
 import FormField from '../components/ui/FormField';
@@ -14,13 +15,13 @@ import { api } from '../services/api';
 const SIGN_IN = 'signin';
 const SIGN_UP = 'signup';
 
-function SignInForm({ credentials, submitLabel, onSubmit }) {
+function SignInForm({ placeholders, submitLabel, submitting, onSubmit }) {
   const emailId = useId();
   const passwordId = useId();
   return (
     <form className="form" onSubmit={onSubmit}>
       <FormField label="Work Email" htmlFor={emailId}>
-        <input id={emailId} name="email" type="email" required className="input" placeholder="alex@company.corp" defaultValue={credentials.email} />
+        <input id={emailId} name="email" type="email" required autoComplete="email" className="input" placeholder={placeholders.email} />
       </FormField>
       <FormField
         label="Password"
@@ -31,17 +32,18 @@ function SignInForm({ credentials, submitLabel, onSubmit }) {
           </a>
         }
       >
-        <input id={passwordId} name="password" type="password" required className="input" defaultValue={credentials.password} />
+        <input id={passwordId} name="password" type="password" required autoComplete="current-password" className="input" />
       </FormField>
-      <Button type="submit" block className="auth-card__submit">
-        {submitLabel}
+      <Button type="submit" block className="auth-card__submit" disabled={submitting}>
+        {submitting ? 'Signing in…' : submitLabel}
       </Button>
     </form>
   );
 }
 
-function SignUpForm({ placeholders, submitLabel, onSubmit }) {
+function SignUpForm({ placeholders, submitLabel, submitting, onSubmit }) {
   const nameId = useId();
+  const companyId = useId();
   const emailId = useId();
   const passwordId = useId();
   const confirmPasswordId = useId();
@@ -58,10 +60,13 @@ function SignUpForm({ placeholders, submitLabel, onSubmit }) {
   return (
     <form className="form" onSubmit={onSubmit}>
       <FormField label="Full Name" htmlFor={nameId}>
-        <input id={nameId} name="name" type="text" required className="input" placeholder={placeholders.name} />
+        <input id={nameId} name="name" type="text" required maxLength={255} autoComplete="name" className="input" placeholder={placeholders.name} />
+      </FormField>
+      <FormField label="Company (optional)" htmlFor={companyId} hint="Creates a workspace for your company.">
+        <input id={companyId} name="companyName" type="text" maxLength={255} autoComplete="organization" className="input" placeholder={placeholders.company} />
       </FormField>
       <FormField label="Work Email" htmlFor={emailId}>
-        <input id={emailId} name="email" type="email" required className="input" placeholder={placeholders.email} />
+        <input id={emailId} name="email" type="email" required autoComplete="email" className="input" placeholder={placeholders.email} />
       </FormField>
       <FormField label="Password" htmlFor={passwordId}>
         <input
@@ -70,6 +75,9 @@ function SignUpForm({ placeholders, submitLabel, onSubmit }) {
           name="password"
           type="password"
           required
+          minLength={8}
+          maxLength={128}
+          autoComplete="new-password"
           className="input"
           placeholder={placeholders.password}
           onInput={checkPasswordsMatch}
@@ -82,13 +90,14 @@ function SignUpForm({ placeholders, submitLabel, onSubmit }) {
           name="confirmPassword"
           type="password"
           required
+          autoComplete="new-password"
           className="input"
           placeholder={placeholders.confirmPassword}
           onInput={checkPasswordsMatch}
         />
       </FormField>
-      <Button type="submit" block className="auth-card__submit">
-        {submitLabel}
+      <Button type="submit" block className="auth-card__submit" disabled={submitting}>
+        {submitting ? 'Creating account…' : submitLabel}
       </Button>
     </form>
   );
@@ -101,27 +110,45 @@ export default function AuthPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = searchParams.get('mode') === SIGN_IN ? SIGN_IN : SIGN_UP;
   const redirectTo = safeRedirectPath(searchParams.get(REDIRECT_PARAM));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   // Switching tabs keeps the pending redirect so the user still lands where they were headed.
   const setMode = (nextMode) => {
+    setError(null);
     const params = {};
     if (nextMode === SIGN_IN) params.mode = SIGN_IN;
     if (redirectTo) params[REDIRECT_PARAM] = redirectTo;
     setSearchParams(params, { replace: true });
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const form = Object.fromEntries(new FormData(event.currentTarget));
-    if (mode === SIGN_IN) signIn({ email: form.email });
-    else signUp({ name: form.name, email: form.email });
-    navigate(redirectTo ?? ROUTES.projects, { replace: true });
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (mode === SIGN_IN) {
+        await signIn({ email: form.email, password: form.password });
+      } else {
+        await signUp({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          companyName: form.companyName.trim() || undefined,
+        });
+      }
+      navigate(redirectTo ?? ROUTES.projects, { replace: true });
+    } catch (err) {
+      setError(err.message);
+      setSubmitting(false);
+    }
   };
 
   return (
     <Page variant="auth">
       <AsyncContent state={state}>
-        {({ modes, demoCredentials, placeholders }) => {
+        {({ modes, placeholders }) => {
           const copy = modes[mode];
           const otherMode = mode === SIGN_IN ? SIGN_UP : SIGN_IN;
           return (
@@ -148,10 +175,16 @@ export default function AuthPage() {
                 />
               </div>
 
+              {error && (
+                <Alert tone="error" icon="error" title={copy.errorTitle}>
+                  {error}
+                </Alert>
+              )}
+
               {mode === SIGN_IN ? (
-                <SignInForm credentials={demoCredentials} submitLabel={copy.submitLabel} onSubmit={handleSubmit} />
+                <SignInForm placeholders={placeholders} submitLabel={copy.submitLabel} submitting={submitting} onSubmit={handleSubmit} />
               ) : (
-                <SignUpForm placeholders={placeholders} submitLabel={copy.submitLabel} onSubmit={handleSubmit} />
+                <SignUpForm placeholders={placeholders} submitLabel={copy.submitLabel} submitting={submitting} onSubmit={handleSubmit} />
               )}
 
               <div className="auth-card__switch">

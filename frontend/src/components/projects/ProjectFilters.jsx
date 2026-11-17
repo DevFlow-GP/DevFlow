@@ -1,50 +1,32 @@
 import Icon from '../ui/Icon';
-import Select from '../ui/Select';
 
-/** Search box + status / framework dropdowns above the projects table. */
-export default function ProjectFilters({ filters, options, onChange }) {
-  const update = (field) => (event) => onChange({ ...filters, [field]: event.target.value });
-
+/**
+ * Search box above the projects table. Status and framework filters return
+ * once projects have deployments and templates to filter by.
+ */
+export default function ProjectFilters({ filters, onChange }) {
   return (
     <div className="toolbar">
       <div className="search-field">
         <Icon name="search" size="base" className="search-field__icon" />
         <input
+          id="project-filter"
           type="text"
           className="input input--search"
-          placeholder="Filter projects by name, branch or tag..."
+          placeholder="Filter projects by name, repository or branch…"
           aria-label="Filter projects"
           value={filters.query}
-          onChange={update('query')}
-        />
-      </div>
-      <div className="toolbar__filters">
-        <Select
-          size="sm"
-          options={options.statuses}
-          value={filters.status}
-          onChange={update('status')}
-          aria-label="Filter by status"
-        />
-        <Select
-          size="sm"
-          options={options.frameworks}
-          value={filters.framework}
-          onChange={update('framework')}
-          aria-label="Filter by framework"
+          onChange={(event) => onChange({ ...filters, query: event.target.value })}
         />
       </div>
     </div>
   );
 }
 
-export function filterProjects(projects, { query, status, framework }) {
+export function filterProjects(projects, { query }) {
   const needle = query.trim().toLowerCase();
-  return projects.filter((project) => {
-    const matchesQuery =
-      !needle || [project.name, project.branch, project.commit].some((value) => value.toLowerCase().includes(needle));
-    const matchesStatus = status === 'all' || project.status === status;
-    const matchesFramework = framework === 'all' || project.frameworkFamily === framework;
-    return matchesQuery && matchesStatus && matchesFramework;
-  });
+  if (!needle) return projects;
+  return projects.filter((project) =>
+    [project.name, project.repo_full_name, project.branch].some((value) => value.toLowerCase().includes(needle)),
+  );
 }

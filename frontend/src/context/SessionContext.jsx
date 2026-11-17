@@ -1,85 +1,102 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import useApi from '../hooks/useApi';
-import { api } from '../services/api';
-
-const STORAGE_KEY = 'devflow-user';
+import { api, setUnauthorizedHandler, tokenStore } from '../services/api';
 
 const SessionContext = createContext(null);
 
-function readStoredUser() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored?.name) return stored;
-  } catch {
-    /* storage unavailable or corrupted */
-  }
-  return null;
-}
-
-/** "Alex Vance" → "AV"; falls back to the first letter of a single word. */
-export function initialsFor(name) {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const letters = words.length > 1 ? words[0][0] + words[words.length - 1][0] : (words[0]?.[0] ?? '');
-  return letters.toUpperCase();
-}
-
-/** "jane.doe@acme.corp" → "Jane Doe" */
-function nameFromEmail(email) {
-  return email
-    .split('@')[0]
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(' ');
+/** Users who signed up without a company still get a workspace to show in the UI. */
+function personalWorkspace(user) {
+  return { slug: 'personal', name: 'Personal', initials: user.initials, cluster: null };
 }
 
 /**
- * Shares the signed-in user (or null for guests) and the active workspace app-wide.
- * The prototype has no real auth: the signed-in user is persisted in localStorage.
+ * Shares the signed-in user (or null for guests) and their workspace app-wide.
+ * The access token is kept by services/api.js; on load, a stored token is
+ * exchanged for the user via GET /session.
+ *
+ * status: 'guest' | 'loading' | 'ready' | 'error' (backend unreachable)
  */
 export function SessionProvider({ children }) {
-  const state = useApi(api.getSession);
-  const [user, setUser] = useState(readStoredUser);
+  const [session, setSession] = useState(null);
+  const [status, setStatus] = useState(() => (tokenStore.get() ? 'loading' : 'guest'));
+  const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
-  useEffect(() => {
-    try {
-      if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-  }, [user]);
-
-  const demoUser = state.data?.user ?? null;
-
-  /** Sign in with an email; the demo account keeps its profile, other emails get a derived name. */
-  const signIn = useCallback(
-    ({ email }) => {
-      const name = demoUser && demoUser.email === email ? demoUser.name : nameFromEmail(email) || email;
-      setUser({ name, email, initials: initialsFor(name) });
-    },
-    [demoUser],
-  );
-
-  const signUp = useCallback(({ name, email }) => {
-    setUser({ name, email, initials: initialsFor(name) });
+  const signOut = useCallback(() => {
+    tokenStore.set(null);
+    setSession(null);
+    setError(null);
+    setStatus('guest');
   }, []);
 
-  const signOut = useCallback(() => setUser(null), []);
+  // An expired or revoked token anywhere in the app ends the session.
+  useEffect(() => {
+    setUnauthorizedHandler(signOut);
+    return () => setUnauthorizedHandler(null);
+  }, [signOut]);
 
-  const value = useMemo(
-    () => ({
+  // Restore the session from a stored token (page load, or Retry after an error).
+  useEffect(() => {
+    if (!tokenStore.get()) return undefined;
+    let cancelled = false;
+    setStatus('loading');
+    api
+      .getSession()
+      .then((data) => {
+        if (cancelled) return;
+        setSession(data);
+        setStatus('ready');
+      })
+      .catch((err) => {
+        if (cancelled || err.status === 401) return; // 401 already signed out
+        setError(err);
+        setStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+
+  /** Stores the token from login/register, then loads the session. Rejects with an ApiError. */
+  const startSession = useCallback(async ({ access_token: token }) => {
+    tokenStore.set(token);
+    try {
+      setSession(await api.getSession());
+      setError(null);
+      setStatus('ready');
+    } catch (err) {
+      tokenStore.set(null);
+      setStatus('guest');
+      throw err;
+    }
+  }, []);
+
+  const signIn = useCallback(
+    async ({ email, password }) => startSession(await api.login({ email, password })),
+    [startSession],
+  );
+
+  const signUp = useCallback(
+    async ({ name, email, password, companyName }) =>
+      startSession(await api.register({ name, email, password, companyName })),
+    [startSession],
+  );
+
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const value = useMemo(() => {
+    const user = session?.user ?? null;
+    return {
       user,
       isAuthenticated: Boolean(user),
-      workspace: state.data?.workspace ?? null,
-      loading: state.loading,
-      error: state.error,
+      workspace: user ? (session.workspace ?? personalWorkspace(user)) : null,
+      loading: status === 'loading',
+      error: status === 'error' ? error : null,
+      reload,
       signIn,
       signUp,
       signOut,
-    }),
-    [user, state.data, state.loading, state.error, signIn, signUp, signOut],
-  );
+    };
+  }, [session, status, error, reload, signIn, signUp, signOut]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

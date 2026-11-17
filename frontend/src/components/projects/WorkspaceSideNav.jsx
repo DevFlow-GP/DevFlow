@@ -1,8 +1,12 @@
+import { useLocation } from 'react-router-dom';
 import Button from '../ui/Button';
 import SideNav, { SideNavHeader } from '../layout/SideNav';
 import { ROUTES, WORKSPACE_NAV } from '../../config/navigation';
 
 export default function WorkspaceSideNav({ workspace }) {
+  const { pathname } = useLocation();
+  const items = WORKSPACE_NAV.main.map((item) => ({ ...item, active: item.to === pathname }));
+
   return (
     <SideNav
       label="DevFlow main side navigation"
@@ -19,7 +23,7 @@ export default function WorkspaceSideNav({ workspace }) {
           New Pipeline
         </Button>
       }
-      items={WORKSPACE_NAV.main}
+      items={items}
       footerItems={WORKSPACE_NAV.footer}
     />
   );

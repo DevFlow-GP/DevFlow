@@ -3,6 +3,7 @@ import AppLayout from './components/layout/AppLayout';
 import RequireAuth from './components/layout/RequireAuth';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
+import GitHubIntegrationPage from './pages/GitHubIntegrationPage';
 import JobDetailsPage from './pages/JobDetailsPage';
 import LandingPage from './pages/LandingPage';
 import NewProjectPage from './pages/NewProjectPage';
@@ -16,6 +17,7 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/new" element={<NewProjectPage />} />
+          <Route path="integrations/github" element={<GitHubIntegrationPage />} />
         </Route>
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="job" element={<JobDetailsPage />} />

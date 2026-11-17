@@ -6,6 +6,8 @@ export const ROUTES = {
   job: '/job',
   signUp: '/auth',
   signIn: '/auth?mode=signin',
+  // Also where the backend sends the browser back to after GitHub.
+  githubIntegration: '/integrations/github',
 };
 
 /** Resolves a data-driven navigation target (e.g. "dashboard") to a route path. */
@@ -41,13 +43,17 @@ export const MOBILE_NAV_ITEMS = [
   { label: 'Sign in', icon: 'group_add', to: ROUTES.signUp, guestOnly: true },
 ];
 
-/** Side navigation on the workspace (projects list) screen. Items without `to` are placeholders. */
+/**
+ * Side navigation on workspace screens (projects list, integrations). Items without
+ * `to` are placeholders. The item whose `to` matches the current page is highlighted.
+ */
 export const WORKSPACE_NAV = {
   main: [
-    { label: 'Pipelines', icon: 'conversion_path', to: ROUTES.projects, active: true },
+    { label: 'Pipelines', icon: 'conversion_path', to: ROUTES.projects },
     { label: 'Deployments', icon: 'rocket_launch', to: ROUTES.dashboard },
     { label: 'Infrastructure', icon: 'dns' },
     { label: 'Observability', icon: 'monitoring', to: ROUTES.dashboard },
+    { label: 'GitHub', icon: 'link', to: ROUTES.githubIntegration },
     { label: 'Settings', icon: 'settings' },
   ],
   footer: [

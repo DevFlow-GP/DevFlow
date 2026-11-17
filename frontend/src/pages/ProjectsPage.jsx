@@ -12,12 +12,11 @@ import { useSession } from '../context/SessionContext';
 import useApi from '../hooks/useApi';
 import { api } from '../services/api';
 
-const INITIAL_FILTERS = { query: '', status: 'all', framework: 'all' };
+const INITIAL_FILTERS = { query: '' };
 
 export default function ProjectsPage() {
   const { workspace } = useSession();
   const state = useApi(api.getProjects);
-  const [showEmptyState, setShowEmptyState] = useState(false);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
 
   return (
@@ -27,40 +26,35 @@ export default function ProjectsPage() {
       <main className="page-main">
         <div className="container container--6xl stack">
           <PageHeader
-            title="Production Workloads"
-            description="Active web services, workers, and continuous deployment triggers."
+            title="Projects"
+            description="Your projects and your team's, each linked to a GitHub repository and branch."
             actions={
-              <>
-                <Button variant="outline" size="xs" className="btn--muted" onClick={() => setShowEmptyState((v) => !v)}>
-                  {showEmptyState ? 'Restore Projects Table' : 'Toggle Empty State'}
-                </Button>
-                <Button icon="add" iconSize="base" to={ROUTES.newProject}>
-                  New project
-                </Button>
-              </>
+              <Button icon="add" iconSize="base" to={ROUTES.newProject}>
+                New project
+              </Button>
             }
           />
 
-          <AsyncContent state={state}>
-            {(data) => (
-              <>
-                <ProjectFilters filters={filters} options={data.filters} onChange={setFilters} />
-                {showEmptyState ? (
-                  <EmptyState
-                    icon="rocket"
-                    title="No services found"
-                    description={`You haven't provisioned any pipelines in the ${workspace?.name ?? ''} workspace yet.`}
-                    action={
-                      <Button icon="add" to={ROUTES.newProject}>
-                        Create your first project
-                      </Button>
-                    }
-                  />
-                ) : (
-                  <ProjectsTable projects={filterProjects(data.projects, filters)} />
-                )}
-              </>
-            )}
+          <AsyncContent state={state} loadingLabel="Loading projects…">
+            {(projects) =>
+              projects.length === 0 ? (
+                <EmptyState
+                  icon="rocket"
+                  title="No projects yet"
+                  description={`Create a project from one of your GitHub repositories to start using the ${workspace?.name ?? ''} workspace.`}
+                  action={
+                    <Button icon="add" to={ROUTES.newProject}>
+                      Create your first project
+                    </Button>
+                  }
+                />
+              ) : (
+                <>
+                  <ProjectFilters filters={filters} onChange={setFilters} />
+                  <ProjectsTable projects={filterProjects(projects, filters)} />
+                </>
+              )
+            }
           </AsyncContent>
         </div>
       </main>

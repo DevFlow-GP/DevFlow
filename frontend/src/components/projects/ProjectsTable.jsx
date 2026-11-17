@@ -1,11 +1,12 @@
-import { Link, useNavigate } from 'react-router-dom';
-import CopyButton from '../ui/CopyButton';
 import DataTable from '../ui/DataTable';
 import Icon from '../ui/Icon';
 import StatusBadge from '../ui/StatusBadge';
-import { getStatus } from '../../utils/status';
-import { routeFor } from '../../config/navigation';
+import { formatRelative } from '../../utils/formatDate';
 
+/**
+ * Projects from GET /projects. Status, live URL and deploy times arrive with
+ * pipelines and deployments; until then every project is "not deployed".
+ */
 const COLUMNS = [
   {
     key: 'project',
@@ -13,60 +14,55 @@ const COLUMNS = [
     render: (project) => (
       <>
         <div className="project-name">
-          <Icon name="view_in_ar" size="base" className={`text-${getStatus(project.status).iconTone}`} />
+          <Icon name="view_in_ar" size="base" className="text-outline" />
           {project.name}
         </div>
         <div className="project-meta">
-          {project.branch} (commit #{project.commit})
+          {project.repo_full_name} · {project.branch}
         </div>
       </>
     ),
   },
   {
-    key: 'framework',
-    header: 'Framework',
-    render: (project) => <span className="tag tag--strong">{project.framework}</span>,
+    key: 'visibility',
+    header: 'Repository',
+    render: (project) => (
+      <span className="tag tag--strong">
+        <Icon name={project.is_private ? 'lock' : 'public'} size="xs" /> {project.is_private ? 'Private' : 'Public'}
+      </span>
+    ),
   },
   {
     key: 'status',
     header: 'Status',
-    render: (project) => <StatusBadge status={project.status} />,
+    render: () => <StatusBadge status="not_deployed" />,
   },
   {
     key: 'url',
-    header: 'Monospace URL',
-    render: (project) =>
-      project.url ? (
-        <div className="url-cell">
-          <span className="url-cell__text">{project.url}</span>
-          <CopyButton text={project.url} message="Monospace URL Copied!" bare stopPropagation />
-        </div>
-      ) : (
-        <span className="text-placeholder">{project.urlPlaceholder}</span>
-      ),
+    header: 'Live URL',
+    render: () => <span className="text-placeholder">Not deployed yet</span>,
   },
   {
-    key: 'lastDeployed',
-    header: 'Last Deployed',
+    key: 'created',
+    header: 'Created',
     className: 'cell-muted',
-    render: (project) => project.lastDeployed,
+    render: (project) => formatRelative(project.created_at),
   },
   {
     key: 'actions',
     header: 'Actions',
     align: 'right',
     stopPropagation: true,
-    render: (project) => (
-      <Link to={routeFor(project.action.target)} className={`link-btn link-btn--${project.action.tone}`}>
-        {project.action.label}
-      </Link>
-    ),
+    render: (project) =>
+      project.repo_url && (
+        <a href={project.repo_url} target="_blank" rel="noreferrer" className="link-btn link-btn--primary">
+          View on GitHub
+        </a>
+      ),
   },
 ];
 
 export default function ProjectsTable({ projects }) {
-  const navigate = useNavigate();
-
   return (
     <div className="table-card">
       <div className="table-scroll">
@@ -74,8 +70,7 @@ export default function ProjectsTable({ projects }) {
           columns={COLUMNS}
           rows={projects}
           getRowKey={(project) => project.id}
-          onRowClick={(project) => navigate(routeFor(project.target))}
-          emptyMessage="No projects match the current filters."
+          emptyMessage="No projects match your search."
         />
       </div>
     </div>

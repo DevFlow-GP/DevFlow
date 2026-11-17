@@ -432,6 +432,11 @@ summary::-webkit-details-marker {
 .btn:active {
   transform: scale(0.98);
 }
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
 
 .btn--xs { padding: 0.3125rem 0.75rem; font-size: 12px; line-height: 16px; gap: 0.375rem; }
 .btn--sm { padding: 0.3125rem 0.875rem; font-size: 14px; line-height: 20px; gap: 0.375rem; }
@@ -610,6 +615,9 @@ summary::-webkit-details-marker {
 }
 .tag--strong {
   font-weight: 500;
+}
+.tag .icon {
+  vertical-align: -2px;
 }
 
 .chip-list {
@@ -1035,6 +1043,24 @@ summary::-webkit-details-marker {
   margin-top: 0.125rem;
   color: var(--color-warning);
 }
+.alert--success {
+  background: var(--color-success-softer);
+  border: 1px solid var(--color-success-border);
+}
+.alert--success .alert__icon,
+.alert--success .alert__title,
+.alert--success .alert__message {
+  color: var(--color-success);
+}
+.alert--error {
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger);
+}
+.alert--error .alert__icon,
+.alert--error .alert__title,
+.alert--error .alert__message {
+  color: var(--color-danger);
+}
 .alert__body {
   flex: 1;
   min-width: 0;
@@ -1228,6 +1254,11 @@ summary::-webkit-details-marker {
 }
 @media (min-width: 640px) {
   .choice-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .choice-grid.choice-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.choice-grid--2 { margin-bottom: 0; }
+@media (max-width: 479.98px) {
+  .choice-grid.choice-grid--2 { grid-template-columns: minmax(0, 1fr); }
 }
 .choice-card {
   position: relative;
@@ -2911,4 +2942,123 @@ summary::-webkit-details-marker {
   font-size: 12px;
   line-height: 16px;
   color: var(--color-on-surface-variant);
+}
+
+/* --- GitHub integration ------------------------------------------------ */
+.github-panel__title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+.github-panel__text {
+  margin-top: 0.25rem;
+  font-size: 14px;
+  line-height: 20px;
+}
+.github-panel__note {
+  font-size: 12px;
+  line-height: 16px;
+}
+.github-panel__account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.github-panel__login {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--color-on-surface);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.github-panel__login:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.repo-list {
+  overflow: hidden;
+}
+.repo-list__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--color-surface-highest);
+}
+.repo-list__search {
+  flex: 1 1 14rem;
+  max-width: 18rem;
+}
+.repo-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.repo-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--color-surface-highest);
+}
+.repo-list__item:last-child {
+  border-bottom: 0;
+}
+.repo-list__info {
+  min-width: 0;
+}
+.repo-list__name {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--color-on-surface);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.repo-list__name:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.repo-list__description {
+  margin-top: 0.125rem;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--color-on-surface-variant);
+}
+.repo-list__message {
+  padding: 1rem 1.5rem;
+  font-size: 14px;
+}
+.repo-list__footer {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--color-surface-highest);
+}
+.async-state__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 14px;
+}
+@media (max-width: 539.98px) {
+  .repo-list__item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .repo-list__search {
+    max-width: none;
+  }
 }
