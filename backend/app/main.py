@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.api.auth import router as auth_router
 from app.api.github import router as github_router
 from app.api.health import router as health_router
+from app.api.pipelines import router as pipelines_router
 from app.api.projects import router as projects_router
 from app.api.session import router as session_router
 from app.api.users import router as users_router
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router)
     application.include_router(github_router)
     application.include_router(projects_router)
+    application.include_router(pipelines_router)
     application.include_router(session_router)
     application.include_router(users_router)
     application.add_exception_handler(AppError, _app_error_handler)

@@ -14,6 +14,13 @@ from app.integrations.github import (
     GitHubToken,
     GitHubUser,
 )
+from app.integrations.jenkins import (
+    JenkinsBuild,
+    JenkinsClient,
+    JenkinsError,
+    JenkinsQueueItem,
+    job_path,
+)
 
 
 def make_repo(
@@ -166,3 +173,74 @@ def link_token(message: EmailMessage) -> str:
     match = re.search(r"[?&]token=([^\s&]+)", message.body)
     assert match, f"no link token in email {message.subject!r}"
     return unquote(match.group(1))
+
+
+def make_build(number: int, result: str | None = "SUCCESS") -> JenkinsBuild:
+    return JenkinsBuild(
+        number=number,
+        result=result,
+        building=result is None,
+        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        duration_ms=0 if result is None else 42_000,
+        url=f"http://jenkins.test/job/my-app/{number}/",
+    )
+
+
+class FakeJenkinsClient(JenkinsClient):
+    """In-memory Jenkins. Triggered builds wait in the queue until the test
+    calls start(), like a build waiting for a free executor."""
+
+    def __init__(self) -> None:
+        super().__init__(url="http://jenkins.test", user="devflow", token="test-token")
+        # Builds per job name, newest first; a job not listed here doesn't exist.
+        self.jobs: dict[str, list[JenkinsBuild]] = {}
+        self.logs: dict[tuple[str, int], str] = {}
+        self.queue: dict[int, JenkinsQueueItem] = {}
+        self.unavailable = False
+        self._next_queue_id = 1
+
+    def start(self, queue_id: int, job: str) -> int:
+        """An executor picks the queued item up; returns the new build number."""
+        number = (self.jobs[job][0].number + 1) if self.jobs[job] else 1
+        self.jobs[job].insert(0, make_build(number, result=None))
+        item = self.queue[queue_id]
+        self.queue[queue_id] = JenkinsQueueItem(
+            id=item.id, job_path=item.job_path, cancelled=False, build_number=number, why=None
+        )
+        return number
+
+    async def trigger_build(self, job: str) -> int | None:
+        self._check()
+        if job not in self.jobs:
+            return None
+        queue_id = self._next_queue_id
+        self._next_queue_id += 1
+        self.queue[queue_id] = JenkinsQueueItem(
+            id=queue_id,
+            job_path=job_path(job),
+            cancelled=False,
+            build_number=None,
+            why="Waiting for next available executor",
+        )
+        return queue_id
+
+    async def get_queue_item(self, queue_id: int) -> JenkinsQueueItem | None:
+        self._check()
+        return self.queue.get(queue_id)
+
+    async def list_builds(self, job: str, *, limit: int) -> list[JenkinsBuild] | None:
+        self._check()
+        builds = self.jobs.get(job)
+        return None if builds is None else builds[:limit]
+
+    async def get_build(self, job: str, number: int) -> JenkinsBuild | None:
+        self._check()
+        return next((b for b in self.jobs.get(job, []) if b.number == number), None)
+
+    async def get_console_text(self, job: str, number: int) -> str | None:
+        self._check()
+        return self.logs.get((job, number))
+
+    def _check(self) -> None:
+        if self.unavailable:
+            raise JenkinsError("Could not reach Jenkins")

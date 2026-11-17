@@ -12,17 +12,21 @@ from app.core.exceptions import (
     GitHubNotConfiguredError,
     InactiveUserError,
     InvalidTokenError,
+    JenkinsNotConfiguredError,
     NotAuthenticatedError,
     PermissionDeniedError,
 )
 from app.core.security import decode_access_token, issued_before
 from app.integrations.email import ConsoleEmailSender, EmailSender, SmtpEmailSender
 from app.integrations.github import GitHubClient
+from app.integrations.jenkins import JenkinsClient
 from app.models.user import User, UserRole
 from app.repositories.github_connection_repository import GitHubConnectionRepository
+from app.repositories.project_repository import ProjectRepository
 from app.repositories.user_repository import UserRepository
 from app.services.account_email_service import AccountEmailService
 from app.services.github_service import GitHubService
+from app.services.pipeline_service import PipelineService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -124,6 +128,25 @@ def get_optional_github_service(
 OptionalGitHubServiceDep = Annotated[
     GitHubService | None, Depends(get_optional_github_service)
 ]
+
+
+def get_jenkins_client() -> JenkinsClient:
+    """Overridden with a fake in tests."""
+    settings = get_settings()
+    url, user, token = settings.jenkins_url, settings.jenkins_user, settings.jenkins_token
+    if not (url and user and token):
+        raise JenkinsNotConfiguredError()
+    return JenkinsClient(url=url, user=user, token=token)
+
+
+def get_pipeline_service(
+    session: SessionDep,
+    jenkins: Annotated[JenkinsClient, Depends(get_jenkins_client)],
+) -> PipelineService:
+    return PipelineService(ProjectRepository(session), jenkins)
+
+
+PipelineServiceDep = Annotated[PipelineService, Depends(get_pipeline_service)]
 
 
 def get_email_sender() -> EmailSender:

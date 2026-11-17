@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/github/callback"
     github_token_encryption_key: str | None = None
 
+    # Jenkins, with an API token (Jenkins > your user > Security > API Token).
+    # Optional: without them the build endpoints return 503.
+    jenkins_url: str | None = None
+    jenkins_user: str | None = None
+    jenkins_token: str | None = None
+
     # Emails (verification, password reset). "console" logs them instead of
     # sending, for local development; "smtp" sends through the server below.
     email_backend: Literal["console", "smtp"] = "console"
@@ -50,6 +56,9 @@ class Settings(BaseSettings):
         "github_client_id",
         "github_client_secret",
         "github_token_encryption_key",
+        "jenkins_url",
+        "jenkins_user",
+        "jenkins_token",
         "smtp_host",
         "smtp_username",
         "smtp_password",

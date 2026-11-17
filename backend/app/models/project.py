@@ -27,6 +27,9 @@ class Project(UUIDPrimaryKeyMixin, Base):
     # The branch the user chose to build and deploy; pipelines will build pushes to it.
     branch: Mapped[str] = mapped_column(String(255))
     is_private: Mapped[bool]
+    # Full name of the Jenkins job that builds this project, e.g. "my-app" or
+    # "team/my-app" for a job in a folder. None until one is assigned.
+    jenkins_job: Mapped[str | None] = mapped_column(String(255))
     owner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"),
         index=True,

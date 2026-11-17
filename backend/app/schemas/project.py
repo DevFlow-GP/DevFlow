@@ -9,6 +9,9 @@ from app.schemas.github import validate_branch_name
 # "owner/repo" using GitHub's allowed characters. Validated strictly because it
 # is interpolated into the GitHub API URL.
 REPO_FULL_NAME_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
+# A Jenkins job name, with "/" between folders. Stricter than Jenkins itself
+# because it is interpolated into Jenkins API URLs.
+JENKINS_JOB_PATTERN = r"^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$"
 
 
 class ProjectCreate(BaseModel):
@@ -41,6 +44,13 @@ class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
     branch: str | None = None
+    # `jenkins_job: null` unlinks the project from Jenkins.
+    jenkins_job: str | None = Field(
+        default=None,
+        max_length=255,
+        pattern=JENKINS_JOB_PATTERN,
+        examples=["my-app"],
+    )
 
     @field_validator("branch")
     @classmethod
@@ -66,6 +76,7 @@ class ProjectResponse(BaseModel):
     default_branch: str
     branch: str
     is_private: bool
+    jenkins_job: str | None
     owner_id: uuid.UUID
     team_id: uuid.UUID | None
     created_at: datetime

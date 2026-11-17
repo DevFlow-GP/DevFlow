@@ -30,13 +30,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import (
     get_email_sender,
     get_github_client,
+    get_jenkins_client,
     get_optional_github_client,
 )
 from app.core import rate_limit
 from app.core.database import SessionLocal, engine
 from app.main import app
 from app.models import Base
-from tests.fakes import FakeEmailSender, FakeGitHubClient
+from tests.fakes import FakeEmailSender, FakeGitHubClient, FakeJenkinsClient
 
 REGISTER_PAYLOAD: dict[str, str] = {
     "email": "dev@example.com",
@@ -82,6 +83,14 @@ def fake_github() -> Iterator[FakeGitHubClient]:
     yield fake
     app.dependency_overrides.pop(get_github_client, None)
     app.dependency_overrides.pop(get_optional_github_client, None)
+
+
+@pytest.fixture
+def fake_jenkins() -> Iterator[FakeJenkinsClient]:
+    fake = FakeJenkinsClient()
+    app.dependency_overrides[get_jenkins_client] = lambda: fake
+    yield fake
+    app.dependency_overrides.pop(get_jenkins_client, None)
 
 
 @pytest.fixture(autouse=True)

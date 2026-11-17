@@ -98,6 +98,41 @@ class BranchNotFoundError(AppError):
         super().__init__("Branch not found in this repository")
 
 
+class JenkinsNotConfiguredError(AppError):
+    status_code = 503
+
+    def __init__(self) -> None:
+        super().__init__("Jenkins integration is not configured on this server")
+
+
+class JenkinsUnavailableError(AppError):
+    status_code = 502
+
+    def __init__(self) -> None:
+        super().__init__("Jenkins could not be reached. Please try again.")
+
+
+class JenkinsJobNotSetError(AppError):
+    status_code = 409
+
+    def __init__(self) -> None:
+        super().__init__("This project has no Jenkins job yet. Set `jenkins_job` first.")
+
+
+class JenkinsJobNotFoundError(AppError):
+    status_code = 422
+
+    def __init__(self) -> None:
+        super().__init__("The project's Jenkins job does not exist on Jenkins")
+
+
+class BuildNotFoundError(AppError):
+    status_code = 404
+
+    def __init__(self) -> None:
+        super().__init__("Build not found")
+
+
 class ProjectNotFoundError(AppError):
     status_code = 404
 
