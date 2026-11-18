@@ -197,6 +197,10 @@ class FakeJenkinsClient(JenkinsClient):
         self.logs: dict[tuple[str, int], str] = {}
         self.queue: dict[int, JenkinsQueueItem] = {}
         self.unavailable = False
+        # The parameters each queued item was triggered with.
+        self.params: dict[int, dict[str, str] | None] = {}
+        # Stored credentials: id -> (username, password).
+        self.credentials: dict[str, tuple[str, str]] = {}
         self._next_queue_id = 1
 
     def start(self, queue_id: int, job: str) -> int:
@@ -209,12 +213,15 @@ class FakeJenkinsClient(JenkinsClient):
         )
         return number
 
-    async def trigger_build(self, job: str) -> int | None:
+    async def trigger_build(
+        self, job: str, params: dict[str, str] | None = None
+    ) -> int | None:
         self._check()
         if job not in self.jobs:
             return None
         queue_id = self._next_queue_id
         self._next_queue_id += 1
+        self.params[queue_id] = params
         self.queue[queue_id] = JenkinsQueueItem(
             id=queue_id,
             job_path=job_path(job),
@@ -240,6 +247,17 @@ class FakeJenkinsClient(JenkinsClient):
     async def get_console_text(self, job: str, number: int) -> str | None:
         self._check()
         return self.logs.get((job, number))
+
+    async def put_credentials(
+        self,
+        credential_id: str,
+        *,
+        username: str,
+        password: str,
+        description: str,
+    ) -> None:
+        self._check()
+        self.credentials[credential_id] = (username, password)
 
     def _check(self) -> None:
         if self.unavailable:

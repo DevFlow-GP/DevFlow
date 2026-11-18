@@ -213,6 +213,16 @@ class GitHubService:
         if found is None:
             raise BranchNotFoundError()
 
+    async def get_clone_credentials(self, user: User, full_name: str) -> tuple[str, str]:
+        """(GitHub login, token) that can clone `full_name` over HTTPS.
+
+        Asks GitHub first, so a revoked token or lost access fails here with a
+        clear error instead of halfway through a Jenkins build.
+        """
+        await self.get_repository(user, full_name)
+        connection = await self._require_connection(user)
+        return connection.github_login, decrypt_secret(connection.encrypted_access_token)
+
     # --- helpers ----------------------------------------------------------------
 
     async def _require_connection(self, user: User) -> GitHubConnection:

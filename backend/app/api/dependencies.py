@@ -142,8 +142,9 @@ def get_jenkins_client() -> JenkinsClient:
 def get_pipeline_service(
     session: SessionDep,
     jenkins: Annotated[JenkinsClient, Depends(get_jenkins_client)],
+    github: OptionalGitHubServiceDep,
 ) -> PipelineService:
-    return PipelineService(ProjectRepository(session), jenkins)
+    return PipelineService(ProjectRepository(session), jenkins, github)
 
 
 PipelineServiceDep = Annotated[PipelineService, Depends(get_pipeline_service)]

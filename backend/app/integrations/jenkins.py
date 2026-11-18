@@ -11,11 +11,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote, urlparse
+from xml.sax.saxutils import escape
 
 import httpx
 
 _TIMEOUT = httpx.Timeout(10.0)
 _BUILD_FIELDS = "number,result,building,timestamp,duration,url"
+# Jenkins' global credentials store (Credentials plugin), default domain.
+_CREDENTIALS_STORE = "/credentials/store/system/domain/_"
 
 
 class JenkinsError(Exception):
@@ -66,14 +69,25 @@ class JenkinsClient:
         self._url = url.rstrip("/")
         self._auth = (user, token)
 
-    async def trigger_build(self, job: str) -> int | None:
+    async def trigger_build(
+        self, job: str, params: dict[str, str] | None = None
+    ) -> int | None:
         """Queue a build and return its queue item id; None if the job doesn't exist.
+
+        A parameterized job must get `params` (an empty dict uses the job's
+        defaults): Jenkins answers 400 to a plain build of such a job, and also
+        rejects parameters sent to a job that has none.
 
         The build number isn't known yet: Jenkins assigns it when an executor
         picks the item up. Poll get_queue_item() for it.
         """
         # API-token auth doesn't need a CSRF crumb.
-        response = await self._request("POST", f"{job_path(job)}build")
+        if params is None:
+            response = await self._request("POST", f"{job_path(job)}build")
+        else:
+            response = await self._request(
+                "POST", f"{job_path(job)}buildWithParameters", data=params
+            )
         if response.status_code == 404:
             return None
         if response.status_code != 201:
@@ -130,6 +144,45 @@ class JenkinsClient:
             return None
         self._expect_ok(response)
         return response.text
+
+    async def put_credentials(
+        self,
+        credential_id: str,
+        *,
+        username: str,
+        password: str,
+        description: str,
+    ) -> None:
+        """Create or replace a username/password credential in the global store.
+
+        Pipelines refer to it by `credential_id`; Jenkins keeps the password
+        encrypted and masks it in build logs. Needs Credentials Create and
+        Update permission for DevFlow's Jenkins user.
+        """
+        body = (
+            "<com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>"
+            "<scope>GLOBAL</scope>"
+            f"<id>{escape(credential_id)}</id>"
+            f"<description>{escape(description)}</description>"
+            f"<username>{escape(username)}</username>"
+            f"<password>{escape(password)}</password>"
+            "</com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>"
+        )
+        headers = {"Content-Type": "application/xml"}
+        # Update in place; 404 means it doesn't exist yet.
+        response = await self._request(
+            "POST",
+            f"{_CREDENTIALS_STORE}/credential/{quote(credential_id, safe='')}/config.xml",
+            content=body,
+            headers=headers,
+        )
+        if response.status_code == 404:
+            response = await self._request(
+                "POST", f"{_CREDENTIALS_STORE}/createCredentials", content=body, headers=headers
+            )
+        # Jenkins answers some form-style POSTs with a redirect on success.
+        if not 200 <= response.status_code < 400:
+            raise JenkinsError(f"Saving credentials returned HTTP {response.status_code}")
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         try:

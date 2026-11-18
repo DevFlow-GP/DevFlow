@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integrations.jenkins import job_path
 from app.models.team import user_teams
 from app.models.user import User
-from tests.conftest import auth_header, connect_github, register_user
+from tests.conftest import auth_header, connect_github, register_user, user_id
 from tests.fakes import FakeGitHubClient, FakeJenkinsClient, make_build, make_repo
 
 
@@ -111,6 +111,12 @@ async def test_trigger_build_then_follow_it_to_completion(
     triggered = await client.post(base, headers=auth_header(token))
     assert triggered.status_code == 202, triggered.text
     queue_id = triggered.json()["queue_id"]
+    # A public repo: no credentials pushed or sent.
+    assert jenkins.params[queue_id] == {
+        "GIT_REPO_URL": f"https://github.com/{project['repo_full_name']}.git",
+        "GIT_BRANCH": project["branch"],
+    }
+    assert jenkins.credentials == {}
 
     queued = await client.get(f"{base}/queue/{queue_id}", headers=auth_header(token))
     assert queued.json() == {
@@ -251,6 +257,70 @@ async def test_jenkins_not_configured_returns_503(
         f"/projects/{project['id']}/builds", headers=auth_header(token)
     )
     assert response.status_code == 503
+
+
+# --- private repositories -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_private_repo_build_stores_owners_github_token_in_jenkins(
+    client: AsyncClient,
+    jenkins: FakeJenkinsClient,
+    fake_github: FakeGitHubClient,
+) -> None:
+    fake_github.repos = [make_repo(101, "octocat/hello-world", private=True)]
+    token, project = await _project(client, fake_github)
+    assert project["is_private"] is True
+    owner_id = await user_id(client, token)
+
+    triggered = await client.post(
+        f"/projects/{project['id']}/builds", headers=auth_header(token)
+    )
+    assert triggered.status_code == 202, triggered.text
+
+    credential_id = f"devflow-github-{owner_id}"
+    # The token is in Jenkins' credential store; the build only gets its id.
+    assert jenkins.credentials == {credential_id: ("octocat", "gho_dev@example.com")}
+    assert jenkins.params[triggered.json()["queue_id"]] == {
+        "GIT_REPO_URL": "https://github.com/octocat/hello-world.git",
+        "GIT_BRANCH": "main",
+        "GIT_CREDENTIALS_ID": credential_id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_private_repo_build_with_revoked_github_token_returns_409(
+    client: AsyncClient,
+    jenkins: FakeJenkinsClient,
+    fake_github: FakeGitHubClient,
+) -> None:
+    fake_github.repos = [make_repo(101, "octocat/hello-world", private=True)]
+    token, project = await _project(client, fake_github)
+    fake_github.invalid_tokens.add("gho_dev@example.com")
+
+    response = await client.post(
+        f"/projects/{project['id']}/builds", headers=auth_header(token)
+    )
+    assert response.status_code == 409
+    assert "reconnect" in response.json()["detail"]
+    assert jenkins.credentials == {}
+    assert jenkins.queue == {}
+
+
+@pytest.mark.asyncio
+async def test_private_repo_build_with_jenkins_down_returns_502(
+    client: AsyncClient,
+    jenkins: FakeJenkinsClient,
+    fake_github: FakeGitHubClient,
+) -> None:
+    fake_github.repos = [make_repo(101, "octocat/hello-world", private=True)]
+    token, project = await _project(client, fake_github)
+    jenkins.unavailable = True
+
+    response = await client.post(
+        f"/projects/{project['id']}/builds", headers=auth_header(token)
+    )
+    assert response.status_code == 502
 
 
 # --- access ---------------------------------------------------------------------------
