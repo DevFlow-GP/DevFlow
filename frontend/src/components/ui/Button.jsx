@@ -5,7 +5,8 @@ import cx from '../../utils/classNames';
 const DEFAULT_ICON_SIZE = { xs: 'sm', sm: 'sm', md: 'sm', lg: 'base' };
 
 /**
- * Polymorphic button — renders a router <Link> when `to` is set, otherwise a <button>.
+ * Polymorphic button — a router <Link> when `to` is set, an <a> when `href` is set
+ * (external pages), otherwise a <button>.
  *
  * variant: primary | secondary | outline | ghost | danger | warning
  * size:    xs | sm | md | lg
@@ -16,6 +17,7 @@ export default function Button({
   icon,
   iconSize,
   to,
+  href,
   block = false,
   type = 'button',
   className,
@@ -35,6 +37,14 @@ export default function Button({
       <Link to={to} className={classes} {...rest}>
         {content}
       </Link>
+    );
+  }
+
+  if (href) {
+    return (
+      <a href={href} className={classes} {...rest}>
+        {content}
+      </a>
     );
   }
 

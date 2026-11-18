@@ -83,6 +83,15 @@ export function SessionProvider({ children }) {
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
+  /** Re-reads the session in the background (e.g. after a profile change), without the loading state. */
+  const refreshSession = useCallback(async () => {
+    try {
+      setSession(await api.getSession());
+    } catch {
+      /* keep the current session; a 401 already signed out */
+    }
+  }, []);
+
   const value = useMemo(() => {
     const user = session?.user ?? null;
     return {
@@ -92,11 +101,12 @@ export function SessionProvider({ children }) {
       loading: status === 'loading',
       error: status === 'error' ? error : null,
       reload,
+      refreshSession,
       signIn,
       signUp,
       signOut,
     };
-  }, [session, status, error, reload, signIn, signUp, signOut]);
+  }, [session, status, error, reload, refreshSession, signIn, signUp, signOut]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

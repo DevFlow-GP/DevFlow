@@ -10,19 +10,30 @@ npm run build    # production build in dist/
 
 ## Routes
 
-| Path               | Page                          |
-| ------------------ | ----------------------------- |
-| `/`                | Landing page                  |
-| `/projects`        | Projects list (workspace)     |
-| `/projects/new`    | Provision new workload form   |
-| `/dashboard`       | Service dashboard             |
-| `/job`             | Job details & log viewer      |
-| `/auth`            | Create account (`?mode=signin` for sign in) |
+| Path                                   | Page                                                      | Login |
+| -------------------------------------- | --------------------------------------------------------- | ----- |
+| `/`                                    | Landing page                                              |       |
+| `/auth`                                | Create account (`?mode=signin` for sign in)               |       |
+| `/forgot-password`                     | Request a password reset email                            |       |
+| `/reset-password?token=…`              | Choose a new password (link from the email)               |       |
+| `/verify-email?token=…`                | Confirm the email address (link from the email)           |       |
+| `/projects`                            | Projects list; a row opens the project                    | yes   |
+| `/projects/new`                        | New project form; creates the project and starts a build  | yes   |
+| `/projects/:projectId`                 | Project: Run build, build history, settings               | yes   |
+| `/projects/:projectId/builds/:number`  | One build: stages and live console log                    | yes   |
+| `/integrations/github`                 | Connect GitHub                                            | yes   |
+| `/settings`                            | Account: profile, email verification, password, delete    | yes   |
+
+`/dashboard` and `/job` (the old mock screens) redirect to `/projects`.
+
+Builds are polled while they run (`hooks/usePolling.js`): the project page every 3 s,
+the build page every 2.5 s. Stages are read from Jenkins' `[Pipeline]` markers in the
+log (`utils/jenkinsLog.js`) until the backend exposes them.
 
 ## Structure
 
 ```
-public/api/            Mock "database" — JSON served as if from a backend
+public/api/            Static copy for the landing page, auth page and New Project options
 src/
   services/api.js      All data fetching (swap VITE_API_BASE_URL for a real API)
   hooks/useApi.js      { data, loading, error, reload } for any fetcher
@@ -33,7 +44,8 @@ src/
   components/
     ui/                Reusable primitives (Button, Card, DataTable, Modal, …)
     layout/            Navbar, mobile nav, side nav, page shells
-    landing/ projects/ new-project/ dashboard/ job/   Feature components
+    landing/ projects/ project/ new-project/ job/ auth/   Feature components
+    dashboard/         Deployment widgets, unused until deployments exist
   pages/               One file per screen
 ```
 

@@ -49,7 +49,7 @@ export default function DashboardPreview({ path, liveLabel, stats, stages, logsL
             getKey={(stage) => stage.name}
             renderItem={(stage) => <PreviewStage stage={stage} />}
           />
-          <Link to={ROUTES.job} className="preview-stages__link">
+          <Link to={ROUTES.projects} className="preview-stages__link">
             {logsLinkLabel}
           </Link>
         </div>

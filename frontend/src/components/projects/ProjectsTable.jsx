@@ -1,11 +1,44 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DataTable from '../ui/DataTable';
 import Icon from '../ui/Icon';
 import StatusBadge from '../ui/StatusBadge';
+import { projectRoute } from '../../config/navigation';
+import { api } from '../../services/api';
 import { formatRelative } from '../../utils/formatDate';
+import { buildStatusKey } from '../../utils/status';
 
 /**
- * Projects from GET /projects. Status, live URL and deploy times arrive with
- * pipelines and deployments; until then every project is "not deployed".
+ * The latest build's status. Fetched per row for now: one request per project.
+ * Flagged for the backend: return `last_build` with GET /projects instead.
+ */
+function LastBuildStatus({ project }) {
+  const [status, setStatus] = useState(project.jenkins_job ? 'loading' : 'never_built');
+
+  useEffect(() => {
+    if (!project.jenkins_job) return undefined;
+    let cancelled = false;
+    api
+      .listBuilds(project.id, { limit: 1 })
+      .then(([latest]) => {
+        if (!cancelled) setStatus(latest ? buildStatusKey(latest) : 'never_built');
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('unknown');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, project.jenkins_job]);
+
+  if (status === 'loading') return <span className="text-placeholder">…</span>;
+  if (status === 'unknown') return <span className="text-placeholder">Jenkins unavailable</span>;
+  return <StatusBadge status={status} />;
+}
+
+/**
+ * Projects from GET /projects. Live URLs arrive with deployments; until then
+ * every project shows "Not deployed yet".
  */
 const COLUMNS = [
   {
@@ -34,8 +67,8 @@ const COLUMNS = [
   },
   {
     key: 'status',
-    header: 'Status',
-    render: () => <StatusBadge status="not_deployed" />,
+    header: 'Last build',
+    render: (project) => <LastBuildStatus project={project} />,
   },
   {
     key: 'url',
@@ -63,6 +96,7 @@ const COLUMNS = [
 ];
 
 export default function ProjectsTable({ projects }) {
+  const navigate = useNavigate();
   return (
     <div className="table-card">
       <div className="table-scroll">
@@ -70,6 +104,7 @@ export default function ProjectsTable({ projects }) {
           columns={COLUMNS}
           rows={projects}
           getRowKey={(project) => project.id}
+          onRowClick={(project) => navigate(projectRoute(project.id))}
           emptyMessage="No projects match your search."
         />
       </div>

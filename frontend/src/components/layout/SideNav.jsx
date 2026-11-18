@@ -19,11 +19,12 @@ function SideNavItem({ item, compact = false }) {
       </Link>
     );
   }
-  // Placeholder destinations that don't exist in the prototype yet.
+  // Planned screens that don't exist yet.
   return (
-    <button type="button" className={className}>
+    <span className={cx(className, 'is-disabled')} aria-disabled="true" title="Coming soon">
       {content}
-    </button>
+      {item.soon && <span className="sidenav__soon">Soon</span>}
+    </span>
   );
 }
 
@@ -42,7 +43,7 @@ export function SideNavHeader({ initials, avatarTone = 'primary', title, titleTo
 
 /**
  * Left sidebar used by the workspace and service screens.
- * items / footerItems: [{ label, icon, to?, active? }]
+ * items / footerItems: [{ label, icon, to?, active?, soon? }]
  */
 export default function SideNav({ label, header, cta, items, footerItems, footer }) {
   const hasFooter = Boolean(footerItems?.length || footer);

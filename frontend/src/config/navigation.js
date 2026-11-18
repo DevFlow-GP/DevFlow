@@ -2,18 +2,22 @@ export const ROUTES = {
   landing: '/',
   projects: '/projects',
   newProject: '/projects/new',
-  dashboard: '/dashboard',
-  job: '/job',
   signUp: '/auth',
   signIn: '/auth?mode=signin',
+  forgotPassword: '/forgot-password',
+  // The backend emails links to these two, with ?token=...
+  verifyEmail: '/verify-email',
+  resetPassword: '/reset-password',
+  settings: '/settings',
   // Also where the backend sends the browser back to after GitHub.
   githubIntegration: '/integrations/github',
 };
 
-/** Resolves a data-driven navigation target (e.g. "dashboard") to a route path. */
-export function routeFor(target) {
-  return ROUTES[target] ?? ROUTES.landing;
-}
+/** A project's page: details, Run build and build history. */
+export const projectRoute = (projectId) => `/projects/${projectId}`;
+
+/** One build of a project: stages and console output. */
+export const buildRoute = (projectId, number) => `/projects/${projectId}/builds/${number}`;
 
 /** Query param on the auth page holding the path to return to after signing in. */
 export const REDIRECT_PARAM = 'next';
@@ -44,29 +48,29 @@ export const MOBILE_NAV_ITEMS = [
 ];
 
 /**
- * Side navigation on workspace screens (projects list, integrations). Items without
- * `to` are placeholders. The item whose `to` matches the current page is highlighted.
+ * Side navigation on workspace screens (projects list, integrations, settings).
+ * Items with `soon` are planned screens, shown disabled. The item whose `to`
+ * matches the current page is highlighted.
  */
 export const WORKSPACE_NAV = {
   main: [
-    { label: 'Pipelines', icon: 'conversion_path', to: ROUTES.projects },
-    { label: 'Deployments', icon: 'rocket_launch', to: ROUTES.dashboard },
-    { label: 'Infrastructure', icon: 'dns' },
-    { label: 'Observability', icon: 'monitoring', to: ROUTES.dashboard },
+    { label: 'Projects', icon: 'conversion_path', to: ROUTES.projects },
+    { label: 'Deployments', icon: 'rocket_launch', soon: true },
+    { label: 'Infrastructure', icon: 'dns', soon: true },
+    { label: 'Observability', icon: 'monitoring', soon: true },
     { label: 'GitHub', icon: 'link', to: ROUTES.githubIntegration },
-    { label: 'Settings', icon: 'settings' },
+    { label: 'Settings', icon: 'settings', to: ROUTES.settings },
   ],
-  footer: [
-    { label: 'Terminal', icon: 'terminal', to: ROUTES.job },
-    { label: 'Documentation', icon: 'menu_book' },
-  ],
+  footer: [{ label: 'Documentation', icon: 'menu_book', soon: true }],
 };
 
-/** Side navigation on a single service's dashboard. */
-export const SERVICE_NAV = [
-  { label: 'Overview', icon: 'dashboard', to: ROUTES.dashboard, active: true },
-  { label: 'Executions & Logs', icon: 'terminal', to: ROUTES.job },
-  { label: 'Metrics & Trace', icon: 'monitoring' },
-  { label: 'Config & Env', icon: 'tune' },
-  { label: 'All Projects', icon: 'dns', to: ROUTES.projects },
-];
+/** Side navigation on a project's pages; `section` marks the current one. */
+export function projectNav(projectId, section) {
+  return [
+    { label: 'Overview', icon: 'dashboard', to: projectRoute(projectId), active: section === 'overview' },
+    { label: 'Builds & Logs', icon: 'terminal', to: `${projectRoute(projectId)}#builds`, active: section === 'build' },
+    { label: 'Metrics & Trace', icon: 'monitoring', soon: true },
+    { label: 'Settings', icon: 'tune', to: `${projectRoute(projectId)}#settings` },
+    { label: 'All Projects', icon: 'dns', to: ROUTES.projects },
+  ];
+}

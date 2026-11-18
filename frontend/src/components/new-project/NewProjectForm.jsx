@@ -7,11 +7,14 @@ import ModulesSection from './ModulesSection';
 import PipelineModeSection from './PipelineModeSection';
 import ProjectSpecSection from './ProjectSpecSection';
 import SourceSection from './SourceSection';
-import { ROUTES } from '../../config/navigation';
+import { ROUTES, projectRoute } from '../../config/navigation';
 import { api } from '../../services/api';
 
 /** The repo dropdown shows this many of the most recently updated repos. */
 const REPO_LIMIT = 100;
+
+/** Framework picked on the form → the backend's pipeline type (the JTE template folder). */
+const PIPELINE_FOR_FRAMEWORK = { go: 'go', node: 'node', python: 'python', oci: 'dockerfile' };
 
 const repoName = (fullName) => fullName.split('/')[1] ?? fullName;
 
@@ -32,9 +35,10 @@ function GitHubNotice({ title, message }) {
 }
 
 /**
- * Creates a project from one of the user's GitHub repositories (POST /projects).
- * Framework, environment, modules and pipeline mode come from mock options and
- * aren't saved yet: the backend has no templates or pipelines so far.
+ * Creates a project from one of the user's GitHub repositories (POST /projects),
+ * starts its first build, and opens the project page to follow it.
+ * The framework is sent as the pipeline type. Environment, modules and pipeline
+ * mode come from mock options and aren't saved: the backend has no field for them.
  */
 export default function NewProjectForm({ options }) {
   const navigate = useNavigate();
@@ -135,13 +139,29 @@ export default function NewProjectForm({ options }) {
       return;
     }
     setSubmitting(true);
+    let project;
     try {
-      await api.createProject({ repoFullName: repository, name: name.trim() || undefined, branch });
-      navigate(ROUTES.projects);
+      project = await api.createProject({
+        repoFullName: repository,
+        name: name.trim() || undefined,
+        branch,
+        pipeline: PIPELINE_FOR_FRAMEWORK[framework],
+      });
     } catch (error) {
       setSubmitError(error.message);
       setSubmitting(false);
+      return;
     }
+    // The project exists now. A build that can't start (no Jenkins job yet, Jenkins
+    // down) doesn't undo that: the project page shows why and offers Run build.
+    let state;
+    try {
+      const { queue_id: queueId } = await api.triggerBuild(project.id);
+      state = { queueId };
+    } catch (error) {
+      state = { buildError: error.message };
+    }
+    navigate(projectRoute(project.id), { state });
   };
 
   // --- what the source section shows -------------------------------------------
@@ -235,14 +255,14 @@ export default function NewProjectForm({ options }) {
       <div className="action-bar">
         <div className="action-bar__inner">
           <div className="action-bar__note">
-            Saves the project and its branch. Builds and deploys aren&apos;t connected yet.
+            Creates the project and starts its first build. Deploys aren&apos;t connected yet.
           </div>
           <div className="action-bar__actions">
             <Button variant="ghost" to={ROUTES.projects}>
               Cancel
             </Button>
             <Button type="submit" icon="add" className="btn--wide" disabled={!ready || submitting}>
-              {submitting ? 'Creating…' : 'Create project'}
+              {submitting ? 'Creating…' : 'Create and build'}
             </Button>
           </div>
         </div>

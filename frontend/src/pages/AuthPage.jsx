@@ -27,9 +27,9 @@ function SignInForm({ placeholders, submitLabel, submitting, onSubmit }) {
         label="Password"
         htmlFor={passwordId}
         action={
-          <a href="#" className="text-link" onClick={(event) => event.preventDefault()}>
+          <Link to={ROUTES.forgotPassword} className="text-link">
             Forgot password?
-          </a>
+          </Link>
         }
       >
         <input id={passwordId} name="password" type="password" required autoComplete="current-password" className="input" />

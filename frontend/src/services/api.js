@@ -4,9 +4,9 @@
  * Two sources while the integration is in progress:
  * - the DevFlow backend (VITE_API_BASE_URL, default http://localhost:8000) for
  *   everything it already supports;
- * - static JSON in /public/api for page copy and screens the backend can't serve yet
- *   (landing page, dashboard, job details, and the New Project form's framework,
- *   environment and module options).
+ * - static JSON in /public/api for page copy the backend doesn't serve (landing
+ *   page, auth page copy, and the New Project form's framework, environment and
+ *   module options).
  */
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '');
@@ -18,8 +18,6 @@ const SIMULATED_LATENCY_MS = 300;
 const MOCK_ENDPOINTS = {
   landing: 'landing.json',
   newProject: 'new-project.json',
-  dashboard: 'dashboard.json',
-  job: 'job.json',
   auth: 'auth.json',
 };
 
@@ -123,9 +121,10 @@ async function toApiError(response) {
  * or null for empty responses (204). Rejects with an ApiError.
  * `auth: false` skips the token, for sign-in and sign-up: there a 401 means a
  * wrong password, not an expired session.
+ * `text: true` resolves with the raw body instead (e.g. a build's console log).
  */
-async function request(method, path, { body, auth = true } = {}) {
-  const headers = { Accept: 'application/json' };
+async function request(method, path, { body, auth = true, text = false } = {}) {
+  const headers = { Accept: text ? 'text/plain' : 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const sentToken = auth ? accessToken : null;
   if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
@@ -148,7 +147,7 @@ async function request(method, path, { body, auth = true } = {}) {
     throw error;
   }
   if (response.status === 204) return null;
-  return response.json();
+  return text ? response.text() : response.json();
 }
 
 async function getMock(endpoint) {
@@ -188,13 +187,44 @@ export const api = {
 
   // Projects
   getProjects: () => request('GET', '/projects'),
-  createProject: ({ repoFullName, name, branch }) =>
-    request('POST', '/projects', { body: { repo_full_name: repoFullName, name, branch } }),
+  getProject: (id) => request('GET', `/projects/${id}`),
+  /**
+   * `pipeline` (python | node | go | dockerfile) is sent for the per-project Jenkins
+   * jobs change; until the backend has that field it ignores it.
+   */
+  createProject: ({ repoFullName, name, branch, pipeline }) =>
+    request('POST', '/projects', { body: { repo_full_name: repoFullName, name, branch, pipeline } }),
+  /** Only the fields given change: { name, description, branch, jenkins_job }. */
+  updateProject: (id, fields) => request('PATCH', `/projects/${id}`, { body: fields }),
+  deleteProject: (id) => request('DELETE', `/projects/${id}`),
+
+  // Builds (Jenkins). A trigger is queued first: poll the queue item for the build number.
+  /** Resolves with { queue_id }. */
+  triggerBuild: (projectId) => request('POST', `/projects/${projectId}/builds`),
+  /** { queue_id, state: queued | started | cancelled, build_number, reason }. 404 once Jenkins forgets it. */
+  getQueuedBuild: (projectId, queueId) => request('GET', `/projects/${projectId}/builds/queue/${queueId}`),
+  /** Newest first: [{ number, status, started_at, duration_ms, url }]. */
+  listBuilds: (projectId, { limit = 20 } = {}) => request('GET', `/projects/${projectId}/builds?limit=${limit}`),
+  getBuild: (projectId, number) => request('GET', `/projects/${projectId}/builds/${number}`),
+  /** The console output so far, as plain text. */
+  getBuildLog: (projectId, number) => request('GET', `/projects/${projectId}/builds/${number}/log`, { text: true }),
+
+  // Account
+  getMe: () => request('GET', '/auth/me'),
+  verifyEmail: (token) => request('POST', '/auth/verify-email', { body: { token }, auth: false }),
+  resendVerification: () => request('POST', '/auth/resend-verification'),
+  forgotPassword: (email) => request('POST', '/auth/forgot-password', { body: { email }, auth: false }),
+  resetPassword: ({ token, newPassword }) =>
+    request('POST', '/auth/reset-password', { body: { token, new_password: newPassword }, auth: false }),
+  /** { full_name?, email?, current_password? }; a new email needs current_password. */
+  updateMe: (fields) => request('PATCH', '/users/me', { body: fields }),
+  /** Resolves with a fresh token response: every older session is signed out. */
+  changePassword: ({ currentPassword, newPassword }) =>
+    request('POST', '/users/me/password', { body: { current_password: currentPassword, new_password: newPassword } }),
+  deleteAccount: (password) => request('DELETE', '/users/me', { body: { password } }),
 
   // Mock data (not served by the backend yet)
   getLandingContent: () => getMock(MOCK_ENDPOINTS.landing),
   getNewProjectOptions: () => getMock(MOCK_ENDPOINTS.newProject),
-  getDashboard: () => getMock(MOCK_ENDPOINTS.dashboard),
-  getJob: () => getMock(MOCK_ENDPOINTS.job),
   getAuthContent: () => getMock(MOCK_ENDPOINTS.auth),
 };

@@ -2,26 +2,36 @@ import SubHeader from '../layout/SubHeader';
 import BackLink from '../ui/BackLink';
 import Button from '../ui/Button';
 import StatusBadge from '../ui/StatusBadge';
-import { notify } from '../../utils/notify';
-import { ROUTES } from '../../config/navigation';
+import { projectRoute } from '../../config/navigation';
+import { formatRelative } from '../../utils/formatDate';
+import { buildDuration } from '../../utils/formatDuration';
+import { buildStatusKey } from '../../utils/status';
 
-export default function JobHeader({ job }) {
+/** Breadcrumb, status and facts of one build, with Re-run and Open in Jenkins. */
+export default function JobHeader({ project, build, onRerun, rerunning }) {
+  const meta = [
+    { label: 'Branch', value: project.branch },
+    { label: 'Started', value: formatRelative(build.started_at) },
+    { label: 'Duration', value: buildDuration(build) },
+    { label: 'Jenkins job', value: project.jenkins_job },
+  ];
+
   return (
     <SubHeader width="wide">
       <div>
         <div className="breadcrumbs">
-          <BackLink to={ROUTES.dashboard} className="back-link--inline">
-            {job.service}
+          <BackLink to={projectRoute(project.id)} className="back-link--inline">
+            {project.name}
           </BackLink>
           <span className="breadcrumbs__separator">/</span>
-          <span className="breadcrumbs__current">Job #{job.id}</span>
-          <StatusBadge status={job.status} />
+          <span className="breadcrumbs__current">Build #{build.number}</span>
+          <StatusBadge status={buildStatusKey(build)} />
         </div>
         <h1 className="job-title">
-          Execution #{job.id} — <span className="job-title__sub">{job.title}</span>
+          Build #{build.number} — <span className="job-title__sub">{project.repo_full_name}</span>
         </h1>
         <div className="meta-list">
-          {job.meta.map((item) => (
+          {meta.map((item) => (
             <span key={item.label}>
               {item.label}: <strong>{item.value}</strong>
             </span>
@@ -30,16 +40,11 @@ export default function JobHeader({ job }) {
       </div>
 
       <div className="button-row">
-        <Button
-          size="xs"
-          variant="outline"
-          icon="replay"
-          onClick={() => notify(`Re-running Job #${job.id} with cache purged!`)}
-        >
-          Re-run Job
+        <Button size="xs" variant="outline" icon="replay" onClick={onRerun} disabled={rerunning}>
+          {rerunning ? 'Starting…' : 'Re-run build'}
         </Button>
-        <Button size="xs" icon="visibility" to={ROUTES.dashboard}>
-          View Live Service
+        <Button size="xs" variant="ghost" icon="open_in_new" href={build.url} target="_blank" rel="noreferrer">
+          Open in Jenkins
         </Button>
       </div>
     </SubHeader>

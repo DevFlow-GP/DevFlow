@@ -2,10 +2,12 @@ import Button from '../ui/Button';
 import CopyButton from '../ui/CopyButton';
 import Icon from '../ui/Icon';
 import { confirmAction, notify } from '../../utils/notify';
-import { ROUTES } from '../../config/navigation';
 
-/** Canonical URL bar with copy/open tools and the Redeploy / Settings / Stop quick actions. */
-export default function IngressBar({ service }) {
+/**
+ * Canonical URL bar with copy/open tools and the Redeploy / Settings / Stop quick actions.
+ * Not used yet: kept for the project page once deployments exist.
+ */
+export default function IngressBar({ service, onRedeploy }) {
   const openLiveUrl = (event) => {
     event.preventDefault();
     notify('Navigating to simulated ingress live URL!');
@@ -30,7 +32,7 @@ export default function IngressBar({ service }) {
       </div>
 
       <div className="button-row">
-        <Button size="xs" icon="refresh" to={ROUTES.job}>
+        <Button size="xs" icon="refresh" onClick={onRedeploy}>
           Redeploy
         </Button>
         <Button size="xs" variant="ghost" icon="settings" onClick={() => notify('Opening workload settings modal')}>
