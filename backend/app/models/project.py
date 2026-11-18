@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, UUIDPrimaryKeyMixin
@@ -10,6 +12,15 @@ from app.models.base import Base, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.team import Team
     from app.models.user import User
+
+
+class Pipeline(str, Enum):
+    """Which JTE template builds the project: the folder user-apps/<value> in Jenkins."""
+
+    python = "python"
+    node = "node"
+    go = "go"
+    dockerfile = "dockerfile"
 
 
 class Project(UUIDPrimaryKeyMixin, Base):
@@ -27,8 +38,9 @@ class Project(UUIDPrimaryKeyMixin, Base):
     # The branch the user chose to build and deploy; pipelines will build pushes to it.
     branch: Mapped[str] = mapped_column(String(255))
     is_private: Mapped[bool]
-    # Full name of the Jenkins job that builds this project, e.g. "my-app" or
-    # "team/my-app" for a job in a folder. None until one is assigned.
+    pipeline: Mapped[Pipeline] = mapped_column(SAEnum(Pipeline, name="project_pipeline"))
+    # Full name of the Jenkins job DevFlow created for this project (see
+    # app/services/jenkins_jobs.py). None until the first build.
     jenkins_job: Mapped[str | None] = mapped_column(String(255))
     owner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"),

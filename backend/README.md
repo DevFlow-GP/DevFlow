@@ -31,11 +31,12 @@ branches) and to Jenkins, where the pipelines defined in the
 ```
 
 1. A user signs up and links GitHub.
-2. They create a **project** from one of their repositories and pick a branch.
-3. They link the project to a **Jenkins job** (`jenkins_job`).
-4. Triggering a build makes DevFlow tell Jenkins to run that job **with the project's repo and
+2. They create a **project** from one of their repositories and pick a branch. DevFlow picks the
+   project's **pipeline** (JTE template) from the repo's language, or they choose one.
+3. The first build creates the project's own **Jenkins job** in that template's folder
+   (`user-apps/<pipeline>/<project id>`). Every build runs it **with the project's repo and
    branch as parameters**. The JTE pipeline then checks out that repo and builds it.
-5. DevFlow doesn't store build state. Every build read goes to Jenkins, which is the source of truth.
+4. DevFlow doesn't store build state. Every build read goes to Jenkins, which is the source of truth.
 
 ## Code layout
 
@@ -147,21 +148,17 @@ AUTH="Authorization: Bearer $TOKEN"
 curl -s "$API/github/connect?access=public" -H "$AUTH"      # → {"authorization_url": "..."}
 curl -s $API/github/connection -H "$AUTH"                   # → {"connected": true, ...}
 
-# 3. Create a project from a repository
+# 3. Create a project from a repository (pipeline is picked from the repo's language)
 PROJECT=$(curl -s -X POST $API/projects -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"repo_full_name":"ucouldcallmeEL/py-simple","branch":"main"}' | jq -r .id)
 
-# 4. Link the project to its Jenkins job (folders separated by "/")
-curl -s -X PATCH $API/projects/$PROJECT -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"jenkins_job":"user-apps/python/py-test"}'
-
-# 5. Trigger a build → {"queue_id": 42}
+# 4. Trigger a build → {"queue_id": 42}. The first one creates the project's Jenkins job.
 curl -s -X POST $API/projects/$PROJECT/builds -H "$AUTH"
 
-# 6. Poll the queue item until state is "started" and build_number is set
+# 5. Poll the queue item until state is "started" and build_number is set
 curl -s $API/projects/$PROJECT/builds/queue/42 -H "$AUTH"
 
-# 7. Poll the build until status is no longer "running", then read the log
+# 6. Poll the build until status is no longer "running", then read the log
 curl -s $API/projects/$PROJECT/builds/7 -H "$AUTH"
 curl -s $API/projects/$PROJECT/builds/7/log -H "$AUTH"
 ```
@@ -227,11 +224,11 @@ team's. Only the owner can change, delete or build one.
 
 | Endpoint | Parameters | Returns |
 |---|---|---|
-| `POST /projects` | `repo_full_name` (`owner/repo`); optional `name` and `description` (default to GitHub's), optional `branch` (defaults to the repo's default branch) | `201` + project. Checks on GitHub that the repo and branch exist and you can access them. |
+| `POST /projects` | `repo_full_name` (`owner/repo`); optional `name` and `description` (default to GitHub's), optional `branch` (defaults to the repo's default branch), optional `pipeline` (defaults from the repo's language) | `201` + project. Checks on GitHub that the repo and branch exist and you can access them. Doesn't touch Jenkins. |
 | `GET /projects` | | List of projects |
 | `GET /projects/{id}` | | Project |
-| `PATCH /projects/{id}` | any of `name`, `description` (`null` clears it), `branch` (checked on GitHub), `jenkins_job` (`null` unlinks) | Updated project |
-| `DELETE /projects/{id}` | | `204` |
+| `PATCH /projects/{id}` | any of `name`, `description` (`null` clears it), `branch` (checked on GitHub), `pipeline` | Updated project. A new `pipeline` deletes the old Jenkins job; the next build creates the new one. |
+| `DELETE /projects/{id}` | | `204`. Also deletes the project's Jenkins job, if DevFlow created it. |
 
 A project looks like:
 
@@ -240,17 +237,22 @@ A project looks like:
   "id": "…uuid…", "name": "py-simple", "description": null,
   "repo_url": "https://github.com/ucouldcallmeEL/py-simple", "repo_full_name": "ucouldcallmeEL/py-simple",
   "default_branch": "main", "branch": "main", "is_private": false,
-  "jenkins_job": "user-apps/python/py-test",
+  "pipeline": "python", "jenkins_job": "user-apps/python/…project uuid…",
   "owner_id": "…uuid…", "team_id": "…uuid…", "created_at": "2026-11-18T10:00:00Z"
 }
 ```
 
-`jenkins_job` is the job's full name, with `/` between folders, e.g. `user-apps/python/py-test`.
-Allowed characters are letters, digits, `.`, `_` and `-`.
+`pipeline` is the JTE template that builds the project: `python`, `node`, `go` or `dockerfile`.
+Without one, it's picked from GitHub's `language` for the repo: Python → `python`, JavaScript and
+TypeScript → `node`, Go → `go`, anything else (or none) → `dockerfile`. It can't be set to `null`.
+
+`jenkins_job` is read-only: the full name of the job DevFlow created for the project
+(`user-apps/<pipeline>/<project id>`), or `null` until the first build.
 
 ### Builds (needs a token)
 
-All under `/projects/{project_id}/builds`. The project must have a `jenkins_job`.
+All under `/projects/{project_id}/builds`. Before the first build, the list is empty and the
+other read endpoints return `404`.
 
 | Endpoint | Parameters | Returns |
 |---|---|---|
@@ -271,7 +273,7 @@ Jenkins forgets queue items a few minutes after they start. After that the queue
 
 ```json
 { "number": 7, "status": "running", "started_at": "2026-11-18T10:00:00Z", "duration_ms": 0,
-  "url": "http://localhost:8080/job/user-apps/job/python/job/py-test/7/" }
+  "url": "http://localhost:8080/job/user-apps/job/python/job/<project id>/7/" }
 ```
 
 `status` is `running`, `success`, `failure`, `unstable`, `aborted` or `not_built`. `duration_ms` is
@@ -288,17 +290,41 @@ carries `Retry-After` (seconds). Request validation errors are FastAPI's standar
 | `401` | Missing, invalid or expired token; wrong email or password |
 | `403` | Not allowed: not the project owner, wrong role, wrong current password, inactive account |
 | `404` | Project or build not found (also returned for projects you can't see) |
-| `409` | Conflict: email taken, GitHub not connected or needs reconnecting (also when building a private repo with a revoked token), project already exists for this repo, project has no `jenkins_job` |
-| `422` | Repo or branch not found / not accessible; `jenkins_job` doesn't exist on Jenkins |
+| `409` | Conflict: email taken, GitHub not connected or needs reconnecting (also when building a private repo with a revoked token), project already exists for this repo |
+| `422` | Repo or branch not found / not accessible |
 | `429` | Too many attempts, see [rate limits](#rate-limits) |
 | `502` | GitHub or Jenkins couldn't be reached, or Jenkins rejected DevFlow's credentials |
-| `503` | GitHub or Jenkins isn't configured on this server |
+| `503` | GitHub or Jenkins isn't configured on this server; Jenkins has no folder for the project's pipeline (`user-apps/<pipeline>`) |
 
 ## Jenkins integration
 
+### Job lifecycle
+
+DevFlow creates and owns one job per project, named `user-apps/<pipeline>/<project id>`
+(`app/services/jenkins_jobs.py`). The UUID keeps the name unique, stable across renames, and
+safe in URLs.
+
+- **Created** on the project's first build, from `JOB_CONFIG_XML`: a JTE ad-hoc pipeline with the
+  three parameters below, keeping the last 50 builds and running one build at a time. Creating a
+  project never touches Jenkins, so it works while Jenkins is down. A job deleted by hand on
+  Jenkins is recreated by the next build.
+- **Replaced** when the project's `pipeline` changes: the old job is deleted and `jenkins_job`
+  is cleared; the next build creates the job in the new folder.
+- **Deleted** with the project.
+
+Deleting is best effort: a Jenkins outage is logged and doesn't block changing or deleting the
+project. DevFlow only ever deletes a job whose name is the one it would create for that project,
+never a job made by hand. Migration 0006 cleared every `jenkins_job` linked before, since those
+jobs were hand-made.
+
+**Prerequisite:** the folders `user-apps/python`, `user-apps/node`, `user-apps/go` and
+`user-apps/dockerfile` must exist on Jenkins, each loading its JTE template. DevFlow doesn't create
+folders. Building a project whose folder is missing returns `503` ("Jenkins isn't set up for go
+projects yet") and creates nothing.
+
 ### Contract with the JTE jobs
 
-Every job linked to a project must be a **parameterized** pipeline that accepts:
+Every DevFlow job is a **parameterized** pipeline that accepts:
 
 | Parameter | Sent by DevFlow | Used by |
 |---|---|---|
@@ -317,14 +343,17 @@ test, scan, package, deploy.
 api/pipelines.py           trigger_build
   └─ PipelineService.trigger_build(user, project_id)
        ├─ loads the project; 404 if you can't see it, 403 if you don't own it
-       ├─ 409 if jenkins_job isn't set
+       ├─ _ensure_job(project) → "user-apps/python/<project id>"
+       │    ├─ JenkinsClient.job_exists(job); if not, create_job(job, JOB_CONFIG_XML)
+       │    │    (503 if the user-apps/python folder is missing)
+       │    └─ saves project.jenkins_job (kept even if the trigger below fails)
        ├─ _build_params(project) → {"GIT_REPO_URL": ..., "GIT_BRANCH": ...}
        ├─ private repo only:
        │    ├─ GitHubService.get_clone_credentials → checks the token on GitHub, returns (login, token)
        │    ├─ JenkinsClient.put_credentials("devflow-github-<owner id>", login, token)
        │    └─ params["GIT_CREDENTIALS_ID"] = "devflow-github-<owner id>"
        └─ JenkinsClient.trigger_build(job, params)
-            POST /job/user-apps/job/python/job/py-test/buildWithParameters
+            POST /job/user-apps/job/python/job/<project id>/buildWithParameters
             ← 201, Location: /queue/item/42/        → returns 42
 ```
 
@@ -364,6 +393,9 @@ unreachable, rejects the credentials (`401`/`403`), or answers unexpectedly. The
 | `get_build(job, number)` | `job`, `number` | `JenkinsBuild(number, result, building, started_at, duration_ms, url)` | `GET {job}/{number}/api/json` |
 | `get_console_text(job, number)` | `job`, `number` | console output as a string | `GET {job}/{number}/consoleText` |
 | `put_credentials(credential_id, *, username, password, description)` | credential id and its username/password | nothing; creates the credential or replaces it | `POST /credentials/store/system/domain/_/credential/{id}/config.xml`, falling back to `.../createCredentials` if it doesn't exist |
+| `job_exists(job)` | `job` | `True`, or `False` on `404` | `GET {job}/api/json?tree=name` |
+| `create_job(job, config_xml)` | `job`: full name; `config_xml`: the job's `config.xml` | `True` (also when the job already exists, so racing first builds both succeed); `False` if the parent folder is missing | `POST {parent}/createItem?name=<last segment>` (`application/xml`) |
+| `delete_job(job)` | `job` | nothing; a job that's already gone counts as deleted | `POST {job}/doDelete` (`200` or a redirect) |
 | `job_path(job)` (function) | `job` | URL path; `"team/my app"` → `/job/team/job/my%20app/` | |
 
 A plain `/build` on a parameterized job gets `400` from Jenkins, and parameters sent to a job
@@ -375,13 +407,15 @@ The business rules around builds. Methods take the current `User` and a `project
 
 | Method | Rules |
 |---|---|
-| `trigger_build(user, project_id)` | Owner only. Sends the project's repo and branch as parameters, plus the owner's clone credential for a private repo. Returns the queue id. |
+| `trigger_build(user, project_id)` | Owner only. Creates the project's job if needed (`_ensure_job`), then sends the project's repo and branch as parameters, plus the owner's clone credential for a private repo. Returns the queue id. |
 | `get_queued_build(user, project_id, queue_id)` | Visible to teammates. Queue ids are global on Jenkins, so it returns `404` for an item that belongs to another job. |
-| `list_builds(user, project_id, *, limit)` | Visible to teammates. |
+| `list_builds(user, project_id, *, limit)` | Visible to teammates. `[]` before the first build or when the job was deleted on Jenkins. |
 | `get_build(user, project_id, number)` | Visible to teammates. |
 | `get_build_log(user, project_id, number)` | Visible to teammates. |
 
-`JenkinsError` becomes `502`. A missing job becomes `422`, and a missing build or queue item becomes `404`.
+`JenkinsError` becomes `502`, a missing pipeline folder `503`, and a missing build or queue item
+(or any read before the first build) `404`. The read methods use the saved `jenkins_job` and make
+no Jenkins call while it's `null`.
 `PipelineService` gets `GitHubService` only for private repos. Without GitHub configured, building
 one returns `503`.
 
@@ -410,7 +444,10 @@ The suite never calls GitHub, Jenkins or an SMTP server. `tests/fakes.py` has in
 (`FakeGitHubClient`, `FakeJenkinsClient`, `FakeEmailSender`) that `tests/conftest.py` swaps in
 through FastAPI dependency overrides. `FakeJenkinsClient` keeps triggered builds in a queue until
 a test calls `start()`, like a build waiting for an executor. It also records the parameters each
-build was triggered with in `params`.
+build was triggered with in `params`, the jobs it created (`created_configs`, `create_calls`) and
+deleted (`deleted_jobs`). Jobs can only be created in its `folders`; remove one to simulate a
+missing template folder. `tests/test_jenkins_client.py` runs the real `JenkinsClient` against a
+mock HTTP transport to check URLs and status handling.
 
 ### Manual check against a real Jenkins
 

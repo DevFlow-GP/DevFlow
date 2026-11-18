@@ -5,8 +5,10 @@ from httpx import AsyncClient
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.project import Pipeline, Project
 from app.models.team import Team, user_teams
 from app.models.user import User
+from app.services.jenkins_jobs import job_name
 from tests.conftest import auth_header, connect_github, register_user
 from tests.fakes import FakeGitHubClient, make_repo
 
@@ -295,6 +297,87 @@ async def test_teammate_can_view_but_not_change_team_project(
     )
     assert patch.status_code == 403
     assert delete.status_code == 403
+
+
+# --- pipeline ---------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("language", "pipeline"),
+    [
+        ("Python", "python"),
+        ("JavaScript", "node"),
+        ("TypeScript", "node"),
+        ("Go", "go"),
+        ("Rust", "dockerfile"),
+        (None, "dockerfile"),
+    ],
+)
+async def test_pipeline_defaults_from_repo_language(
+    client: AsyncClient,
+    fake_github: FakeGitHubClient,
+    language: str | None,
+    pipeline: str,
+) -> None:
+    fake_github.repos = [make_repo(101, "octocat/hello-world", language=language)]
+    token = await _connected_user(client, fake_github)
+    project = await _create(client, token)
+    assert project["pipeline"] == pipeline
+    assert project["jenkins_job"] is None
+
+
+@pytest.mark.asyncio
+async def test_pipeline_can_be_chosen_on_create(
+    client: AsyncClient,
+    repos: FakeGitHubClient,
+) -> None:
+    # The repo is Python; the chosen pipeline wins.
+    token = await _connected_user(client, repos)
+    project = await _create(client, token, pipeline="dockerfile")
+    assert project["pipeline"] == "dockerfile"
+
+
+@pytest.mark.asyncio
+async def test_unknown_pipeline_is_rejected(
+    client: AsyncClient,
+    repos: FakeGitHubClient,
+) -> None:
+    token = await _connected_user(client, repos)
+    response = await client.post(
+        "/projects",
+        json={"repo_full_name": "octocat/hello-world", "pipeline": "cobol"},
+        headers=auth_header(token),
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_pipeline(
+    client: AsyncClient,
+    repos: FakeGitHubClient,
+) -> None:
+    token = await _connected_user(client, repos)
+    project = await _create(client, token)
+    response = await client.patch(
+        f"/projects/{project['id']}",
+        json={"pipeline": "go"},
+        headers=auth_header(token),
+    )
+    assert response.status_code == 200
+    assert response.json()["pipeline"] == "go"
+
+    cleared = await client.patch(
+        f"/projects/{project['id']}",
+        json={"pipeline": None},
+        headers=auth_header(token),
+    )
+    assert cleared.status_code == 422
+
+
+def test_job_name_is_template_folder_and_project_id() -> None:
+    project = Project(id=uuid.UUID("3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90"), pipeline=Pipeline.python)
+    assert job_name(project) == "user-apps/python/3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90"
 
 
 # --- update / delete -------------------------------------------------------------

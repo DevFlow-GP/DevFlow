@@ -29,6 +29,7 @@ def make_repo(
     *,
     private: bool = False,
     description: str | None = None,
+    language: str | None = "Python",
 ) -> GitHubRepo:
     return GitHubRepo(
         id=repo_id,
@@ -38,7 +39,7 @@ def make_repo(
         html_url=f"https://github.com/{full_name}",
         default_branch="main",
         description=description,
-        language="Python",
+        language=language,
         updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -201,6 +202,17 @@ class FakeJenkinsClient(JenkinsClient):
         self.params: dict[int, dict[str, str] | None] = {}
         # Stored credentials: id -> (username, password).
         self.credentials: dict[str, tuple[str, str]] = {}
+        # Folders that exist (one per JTE template); jobs can only be created in these.
+        self.folders: set[str] = {
+            "user-apps/python",
+            "user-apps/node",
+            "user-apps/go",
+            "user-apps/dockerfile",
+        }
+        self.created_configs: dict[str, str] = {}
+        # Every create_job call, including ones for a missing folder.
+        self.create_calls: list[str] = []
+        self.deleted_jobs: list[str] = []
         self._next_queue_id = 1
 
     def start(self, queue_id: int, job: str) -> int:
@@ -247,6 +259,24 @@ class FakeJenkinsClient(JenkinsClient):
     async def get_console_text(self, job: str, number: int) -> str | None:
         self._check()
         return self.logs.get((job, number))
+
+    async def job_exists(self, job: str) -> bool:
+        self._check()
+        return job in self.jobs
+
+    async def create_job(self, job: str, config_xml: str) -> bool:
+        self._check()
+        self.create_calls.append(job)
+        if job.rpartition("/")[0] not in self.folders:
+            return False
+        self.jobs.setdefault(job, [])
+        self.created_configs[job] = config_xml
+        return True
+
+    async def delete_job(self, job: str) -> None:
+        self._check()
+        self.jobs.pop(job, None)
+        self.deleted_jobs.append(job)
 
     async def put_credentials(
         self,

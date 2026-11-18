@@ -3,8 +3,7 @@ import uuid
 from app.core.exceptions import (
     BuildNotFoundError,
     GitHubNotConfiguredError,
-    JenkinsJobNotFoundError,
-    JenkinsJobNotSetError,
+    JenkinsPipelineNotSetUpError,
     JenkinsUnavailableError,
     PermissionDeniedError,
     ProjectNotFoundError,
@@ -20,6 +19,7 @@ from app.models.project import Project
 from app.models.user import User
 from app.repositories.project_repository import ProjectRepository
 from app.services.github_service import GitHubService
+from app.services.jenkins_jobs import JOB_CONFIG_XML, job_name
 
 
 def clone_credentials_id(user: User) -> str:
@@ -30,7 +30,8 @@ def clone_credentials_id(user: User) -> str:
 class PipelineService:
     """Runs and watches a project's builds on Jenkins.
 
-    Jenkins is the source of truth for build state; nothing is stored here yet.
+    Each project gets its own job, created on its first build (see jenkins_jobs.py).
+    Jenkins is the source of truth for build state; nothing else is stored here.
     """
 
     def __init__(
@@ -50,7 +51,7 @@ class PipelineService:
         # Teammates can watch builds; only the owner can start one.
         if project.owner_id != user.id:
             raise PermissionDeniedError()
-        job = self._job(project)
+        job = await self._ensure_job(project)
         params = self._build_params(project)
         if project.is_private:
             params["GIT_CREDENTIALS_ID"] = await self._push_clone_credentials(user, project)
@@ -58,8 +59,9 @@ class PipelineService:
             queue_id = await self._jenkins.trigger_build(job, params)
         except JenkinsError as exc:
             raise JenkinsUnavailableError() from exc
+        # Only if the job was deleted on Jenkins in the moment since _ensure_job.
         if queue_id is None:
-            raise JenkinsJobNotFoundError()
+            raise JenkinsUnavailableError()
         return queue_id
 
     async def get_queued_build(
@@ -68,7 +70,9 @@ class PipelineService:
         project_id: uuid.UUID,
         queue_id: int,
     ) -> JenkinsQueueItem:
-        job = self._job(await self._get(user, project_id))
+        job = (await self._get(user, project_id)).jenkins_job
+        if job is None:
+            raise BuildNotFoundError()
         try:
             item = await self._jenkins.get_queue_item(queue_id)
         except JenkinsError as exc:
@@ -85,17 +89,20 @@ class PipelineService:
         *,
         limit: int,
     ) -> list[JenkinsBuild]:
-        job = self._job(await self._get(user, project_id))
+        job = (await self._get(user, project_id)).jenkins_job
+        if job is None:  # never built
+            return []
         try:
             builds = await self._jenkins.list_builds(job, limit=limit)
         except JenkinsError as exc:
             raise JenkinsUnavailableError() from exc
-        if builds is None:
-            raise JenkinsJobNotFoundError()
-        return builds
+        # None: the job was deleted on Jenkins; the next build recreates it.
+        return builds or []
 
     async def get_build(self, user: User, project_id: uuid.UUID, number: int) -> JenkinsBuild:
-        job = self._job(await self._get(user, project_id))
+        job = (await self._get(user, project_id)).jenkins_job
+        if job is None:
+            raise BuildNotFoundError()
         try:
             build = await self._jenkins.get_build(job, number)
         except JenkinsError as exc:
@@ -105,7 +112,9 @@ class PipelineService:
         return build
 
     async def get_build_log(self, user: User, project_id: uuid.UUID, number: int) -> str:
-        job = self._job(await self._get(user, project_id))
+        job = (await self._get(user, project_id)).jenkins_job
+        if job is None:
+            raise BuildNotFoundError()
         try:
             log = await self._jenkins.get_console_text(job, number)
         except JenkinsError as exc:
@@ -119,6 +128,23 @@ class PipelineService:
         if project is None:
             raise ProjectNotFoundError()
         return project
+
+    async def _ensure_job(self, project: Project) -> str:
+        """Create the project's job if it doesn't exist (first build, or deleted by hand).
+
+        The saved jenkins_job is kept even if the trigger then fails: the job exists.
+        """
+        job = job_name(project)
+        try:
+            if not await self._jenkins.job_exists(job):
+                if not await self._jenkins.create_job(job, JOB_CONFIG_XML):
+                    raise JenkinsPipelineNotSetUpError(project.pipeline)
+        except JenkinsError as exc:
+            raise JenkinsUnavailableError() from exc
+        if project.jenkins_job != job:
+            project.jenkins_job = job
+            await self._projects.save(project)
+        return job
 
     async def _push_clone_credentials(self, owner: User, project: Project) -> str:
         """Store the owner's current GitHub token in Jenkins; returns the credential id.
@@ -146,16 +172,10 @@ class PipelineService:
     def _build_params(project: Project) -> dict[str, str]:
         """What the JTE user-app jobs check out (see JTE's git_checkout step).
 
-        Every DevFlow job is expected to declare these parameters, plus
+        Every DevFlow job declares these parameters (JOB_CONFIG_XML), plus
         GIT_CREDENTIALS_ID, which trigger_build adds for private repos.
         """
         return {
             "GIT_REPO_URL": f"https://github.com/{project.repo_full_name}.git",
             "GIT_BRANCH": project.branch,
         }
-
-    @staticmethod
-    def _job(project: Project) -> str:
-        if project.jenkins_job is None:
-            raise JenkinsJobNotSetError()
-        return project.jenkins_job
