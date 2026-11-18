@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from sqlalchemy.exc import IntegrityError
@@ -7,18 +8,28 @@ from app.core.exceptions import (
     ProjectAlreadyExistsError,
     ProjectNotFoundError,
 )
+from app.integrations.jenkins import JenkinsClient, JenkinsError
 from app.models.project import Project
 from app.models.user import User
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.github_service import GitHubService
+from app.services.jenkins_jobs import job_name, pipeline_for_language
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectService:
     """Projects: a GitHub repository registered on DevFlow for deployment."""
 
-    def __init__(self, projects: ProjectRepository) -> None:
+    def __init__(
+        self,
+        projects: ProjectRepository,
+        jenkins: JenkinsClient | None = None,
+    ) -> None:
         self._projects = projects
+        # None when Jenkins isn't configured; projects work without it.
+        self._jenkins = jenkins
 
     async def create(
         self,
@@ -47,6 +58,7 @@ class ProjectService:
             default_branch=repo.default_branch,
             branch=branch,
             is_private=repo.private,
+            pipeline=payload.pipeline or pipeline_for_language(repo.language),
             owner_id=owner.id,
             team_id=await self._projects.first_team_id(owner.id),
         )
@@ -77,13 +89,36 @@ class ProjectService:
             # Re-fetch the repo: access may have changed since the project was created.
             repo = await github.get_repository(user, project.repo_full_name)
             await github.ensure_branch_exists(user, repo, payload.branch)
+        # The job lives in its template's folder, so a new pipeline means a new job.
+        # The next build creates it.
+        if payload.pipeline is not None and payload.pipeline != project.pipeline:
+            await self._delete_job(project)  # before the change: job_name reads pipeline
+            project.jenkins_job = None
         for field in payload.model_fields_set:
             setattr(project, field, getattr(payload, field))
         return await self._projects.save(project)
 
     async def delete(self, user: User, project_id: uuid.UUID) -> None:
         project = await self._get_owned(user, project_id)
+        await self._delete_job(project)
         await self._projects.delete(project)
+
+    async def _delete_job(self, project: Project) -> None:
+        """Best effort: a Jenkins outage must not block changing or deleting a project.
+
+        Only touches a job DevFlow created, never one linked by hand.
+        """
+        if self._jenkins is None or project.jenkins_job != job_name(project):
+            return
+        try:
+            await self._jenkins.delete_job(project.jenkins_job)
+        except JenkinsError as exc:
+            logger.warning(
+                "Could not delete Jenkins job %s of project %s: %s",
+                project.jenkins_job,
+                project.id,
+                exc,
+            )
 
     async def _get_owned(self, user: User, project_id: uuid.UUID) -> Project:
         # Teammates can view a project; only its owner can change or delete it.

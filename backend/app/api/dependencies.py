@@ -139,6 +139,15 @@ def get_jenkins_client() -> JenkinsClient:
     return JenkinsClient(url=url, user=user, token=token)
 
 
+def get_optional_jenkins_client() -> JenkinsClient | None:
+    """Like get_jenkins_client, but None when Jenkins isn't configured, for
+    features that only need Jenkins if it's there (deleting a project's job)."""
+    try:
+        return get_jenkins_client()
+    except JenkinsNotConfiguredError:
+        return None
+
+
 def get_pipeline_service(
     session: SessionDep,
     jenkins: Annotated[JenkinsClient, Depends(get_jenkins_client)],

@@ -1,3 +1,8 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.project import Pipeline
+
 LOGIN_FAILURE_MESSAGE = "Invalid email or password"
 
 
@@ -112,18 +117,16 @@ class JenkinsUnavailableError(AppError):
         super().__init__("Jenkins could not be reached. Please try again.")
 
 
-class JenkinsJobNotSetError(AppError):
-    status_code = 409
+class JenkinsPipelineNotSetUpError(AppError):
+    """The folder of the project's JTE template is missing on Jenkins."""
 
-    def __init__(self) -> None:
-        super().__init__("This project has no Jenkins job yet. Set `jenkins_job` first.")
+    status_code = 503
 
-
-class JenkinsJobNotFoundError(AppError):
-    status_code = 422
-
-    def __init__(self) -> None:
-        super().__init__("The project's Jenkins job does not exist on Jenkins")
+    def __init__(self, pipeline: "Pipeline") -> None:
+        super().__init__(
+            f"Jenkins isn't set up for {pipeline.value} projects yet "
+            f"(missing folder user-apps/{pipeline.value})"
+        )
 
 
 class BuildNotFoundError(AppError):

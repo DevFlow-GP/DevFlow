@@ -4,6 +4,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.project import Pipeline
 from app.schemas.github import validate_branch_name
 
 # "owner/repo" using GitHub's allowed characters. Validated strictly because it
@@ -24,6 +25,8 @@ class ProjectCreate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     # The branch to build and deploy. Defaults to the repository's default branch.
     branch: str | None = Field(default=None, examples=["main"])
+    # The JTE template that builds it. Picked from the repository's language when omitted.
+    pipeline: Pipeline | None = None
 
     @field_validator("repo_full_name")
     @classmethod
@@ -44,13 +47,7 @@ class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
     branch: str | None = None
-    # `jenkins_job: null` unlinks the project from Jenkins.
-    jenkins_job: str | None = Field(
-        default=None,
-        max_length=255,
-        pattern=JENKINS_JOB_PATTERN,
-        examples=["my-app"],
-    )
+    pipeline: Pipeline | None = None
 
     @field_validator("branch")
     @classmethod
@@ -59,7 +56,7 @@ class ProjectUpdate(BaseModel):
 
     @model_validator(mode="after")
     def required_fields_cannot_be_cleared(self) -> Self:
-        for field in ("name", "branch"):
+        for field in ("name", "branch", "pipeline"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
@@ -76,6 +73,8 @@ class ProjectResponse(BaseModel):
     default_branch: str
     branch: str
     is_private: bool
+    pipeline: Pipeline
+    # Set by DevFlow when it creates the project's Jenkins job; read-only.
     jenkins_job: str | None
     owner_id: uuid.UUID
     team_id: uuid.UUID | None

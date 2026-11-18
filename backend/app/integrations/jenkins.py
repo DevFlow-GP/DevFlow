@@ -145,6 +145,41 @@ class JenkinsClient:
         self._expect_ok(response)
         return response.text
 
+    async def job_exists(self, job: str) -> bool:
+        response = await self._request("GET", f"{job_path(job)}api/json", params={"tree": "name"})
+        if response.status_code == 404:
+            return False
+        self._expect_ok(response)
+        return True
+
+    async def create_job(self, job: str, config_xml: str) -> bool:
+        """Create `job` from `config_xml`; False if its parent folder doesn't exist.
+
+        Also True when the job already exists, so two first builds racing to
+        create it both succeed.
+        """
+        parent, _, name = job.rpartition("/")
+        response = await self._request(
+            "POST",
+            f"{job_path(parent) if parent else '/'}createItem",
+            params={"name": name},
+            content=config_xml,
+            headers={"Content-Type": "application/xml"},
+        )
+        if response.status_code == 404:
+            return False
+        if response.status_code == 400 and "already exists" in response.headers.get("X-Error", ""):
+            return True
+        self._expect_ok(response)
+        return True
+
+    async def delete_job(self, job: str) -> None:
+        """Delete `job` and its builds. A job that's already gone counts as deleted."""
+        response = await self._request("POST", f"{job_path(job)}doDelete")
+        # doDelete usually answers with a redirect to the parent, which we don't follow.
+        if response.status_code != 404 and not 200 <= response.status_code < 400:
+            raise JenkinsError(f"Deleting a job returned HTTP {response.status_code}")
+
     async def put_credentials(
         self,
         credential_id: str,

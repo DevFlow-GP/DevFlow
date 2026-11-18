@@ -31,6 +31,7 @@ from app.api.dependencies import (
     get_email_sender,
     get_github_client,
     get_jenkins_client,
+    get_optional_jenkins_client,
     get_optional_github_client,
 )
 from app.core import rate_limit
@@ -89,8 +90,10 @@ def fake_github() -> Iterator[FakeGitHubClient]:
 def fake_jenkins() -> Iterator[FakeJenkinsClient]:
     fake = FakeJenkinsClient()
     app.dependency_overrides[get_jenkins_client] = lambda: fake
+    app.dependency_overrides[get_optional_jenkins_client] = lambda: fake
     yield fake
     app.dependency_overrides.pop(get_jenkins_client, None)
+    app.dependency_overrides.pop(get_optional_jenkins_client, None)
 
 
 @pytest.fixture(autouse=True)

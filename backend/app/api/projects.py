@@ -3,7 +3,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.api.dependencies import CurrentUserDep, GitHubServiceDep, SessionDep
+from app.api.dependencies import (
+    CurrentUserDep,
+    GitHubServiceDep,
+    SessionDep,
+    get_optional_jenkins_client,
+)
+from app.integrations.jenkins import JenkinsClient
 from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
@@ -12,8 +18,11 @@ from app.services.project_service import ProjectService
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-def get_project_service(session: SessionDep) -> ProjectService:
-    return ProjectService(ProjectRepository(session))
+def get_project_service(
+    session: SessionDep,
+    jenkins: Annotated[JenkinsClient | None, Depends(get_optional_jenkins_client)],
+) -> ProjectService:
+    return ProjectService(ProjectRepository(session), jenkins)
 
 
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
